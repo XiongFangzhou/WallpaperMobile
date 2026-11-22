@@ -36,8 +36,9 @@ final class WallpaperRenderer {
     private final java.util.concurrent.CompletableFuture<Void> released=new java.util.concurrent.CompletableFuture<>();
     private final Handler handler;private final android.content.Context context;private Events events;
     private WallpaperEffects effects=new WallpaperEffects();
-    private CanvasWallpaper canvasContent;private Bitmap canvasBitmap;private boolean canvasMode;private long canvasDirtyUntil;private boolean usingSource;private Bitmap uploadedCanvas;private int uploadedGeneration,uploadedWidth,uploadedHeight,maxTextureSize=2048;private dev.workshopvideo.core.EffectMotion.Frame lastCanvasMotion;private Bitmap overlay;private int overlayProgram,overlayTexture;
+    private SceneGpu sceneGpu;private CanvasWallpaper canvasContent;private Bitmap canvasBitmap;private boolean canvasMode;private long canvasDirtyUntil;private boolean usingSource;private Bitmap uploadedCanvas;private int uploadedGeneration,uploadedWidth,uploadedHeight,maxTextureSize=2048;private dev.workshopvideo.core.EffectMotion.Frame lastCanvasMotion;private Bitmap overlay;private int overlayProgram,overlayTexture;
     private WallpaperFrameClock frameClock;
+    private final RenderStats renderStats=new RenderStats();
     private void requestFrame(){if(frameClock!=null&&!closed&&!failed&&visible)frameClock.request();}
     private boolean needsFrames(){if(!visible||closed||failed||frozen())return false;long now=SystemClock.elapsedRealtime();return pageAnimation.moving()||now<pagingUntil||effects.overlayAnimating()||canvasContent!=null&&canvasContent.animated()||(effects.options.optBoolean("gyro")||effects.options.optBoolean("touch"))&&now<canvasDirtyUntil;}
     private void stopFrames(){if(frameClock!=null)frameClock.cancel();}
@@ -131,13 +132,15 @@ final class WallpaperRenderer {
     private void draw(boolean update){
         if(closed||failed||(!canvasMode&&texture==null)||!visible)return;
         try{
+            long renderStart=System.nanoTime();
             if(update&&!canvasMode){texture.updateTexImage();texture.getTransformMatrix(matrix);hasFrame=true;framePending=false;lastFrameAt=SystemClock.elapsedRealtime();}if(!hasFrame)return;long now=SystemClock.elapsedRealtime();float delta=pageTick==0?.016f:(now-pageTick)/1000f;pageTick=now;offset=pageAnimation.step(delta);effects.offset=offset;
             if(!canvasMode&&!update&&announced&&!pageAnimation.moving()&&now>canvasDirtyUntil&&!effects.overlayAnimating())return;
-            Bitmap upload=canvasBitmap;dev.workshopvideo.core.CanvasCamera.Frame camera=null;
+            Bitmap upload=canvasBitmap;dev.workshopvideo.core.CanvasCamera.Frame camera=null;boolean layers=canvasMode&&canvasContent.gpuScene()!=null;
             if(canvasMode){
                 if(!frozen()&&announced&&!pageAnimation.moving()&&now>canvasDirtyUntil&&!canvasContent.animated()&&!effects.overlayAnimating())return;
-                if(!frozen()||!announced)usingSource=canvasContent.gpuComposition();
-                if(usingSource){upload=canvasContent.sourceTexture(maxTextureSize);if(!frozen()||lastCanvasMotion==null)lastCanvasMotion=effects.frame(config.optBoolean("fit"));camera=dev.workshopvideo.core.CanvasCamera.frame(canvasContent.contentWidth(),canvasContent.contentHeight(),width,height,config.optBoolean("fit"),effects.options.optBoolean("pan"),offset,lastCanvasMotion);}
+                if(!frozen()||!announced)usingSource=!layers&&canvasContent.gpuComposition();
+                if(layers){if(!frozen()||lastCanvasMotion==null)lastCanvasMotion=effects.frame(config.optBoolean("fit"));camera=dev.workshopvideo.core.CanvasCamera.frame(canvasContent.contentWidth(),canvasContent.contentHeight(),width,height,config.optBoolean("fit"),effects.options.optBoolean("pan"),offset,lastCanvasMotion);}
+                else if(usingSource){upload=canvasContent.sourceTexture(maxTextureSize);if(!frozen()||lastCanvasMotion==null)lastCanvasMotion=effects.frame(config.optBoolean("fit"));camera=dev.workshopvideo.core.CanvasCamera.frame(canvasContent.contentWidth(),canvasContent.contentHeight(),width,height,config.optBoolean("fit"),effects.options.optBoolean("pan"),offset,lastCanvasMotion);}
                 else if(!frozen()||!announced){if(!pageAnimation.moving()&&announced&&now>canvasDirtyUntil&&!canvasContent.animated()&&!effects.overlayAnimating())return;canvasContent.paint(new Canvas(canvasBitmap),canvasBitmap.getWidth(),canvasBitmap.getHeight());}
             }
             dev.workshopvideo.core.EffectMotion.Frame motion=canvasMode?new dev.workshopvideo.core.EffectMotion.Frame(0,0,1,0):effects.frame(false);
@@ -146,7 +149,10 @@ final class WallpaperRenderer {
             if(!canvasMode)fit=WallpaperGeometry.picture(videoWidth,videoHeight,width,height,alignment,effects.options.optBoolean("pan"),offset,motion.zoom(),motion.x(),motion.y());
             if(canvasMode)fit=camera==null?new WallpaperGeometry.Layout(1,1,0,0,1,1):new WallpaperGeometry.Layout(camera.scaleX(),camera.scaleY(),0,0,1,1);
             float us=fit.uSize(),vs=fit.vSize(),u=fit.u0(),v=fit.v0();
+            long preparedAt=System.nanoTime();
             int bg=android.graphics.Color.parseColor(effects.options.optString("backgroundColor","#000000"));GLES20.glViewport(0,0,width,height);GLES20.glClearColor(android.graphics.Color.red(bg)/255f,android.graphics.Color.green(bg)/255f,android.graphics.Color.blue(bg)/255f,1);GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);GLES20.glUseProgram(program);
+            if(layers){if(sceneGpu==null)sceneGpu=new SceneGpu(maxTextureSize);sceneGpu.draw(canvasContent.gpuScene(),effects,camera,lastCanvasMotion,width,height);}
+            else{
             GLES20.glActiveTexture(GLES20.GL_TEXTURE0);GLES20.glBindTexture(canvasMode?GLES20.GL_TEXTURE_2D:GLES11Ext.GL_TEXTURE_EXTERNAL_OES,textureId);if(canvasMode&&(uploadedCanvas!=upload||uploadedGeneration!=upload.getGenerationId())){if(uploadedWidth==upload.getWidth()&&uploadedHeight==upload.getHeight())GLUtils.texSubImage2D(GLES20.GL_TEXTURE_2D,0,0,0,upload);else GLUtils.texImage2D(GLES20.GL_TEXTURE_2D,0,upload,0);uploadedCanvas=upload;uploadedGeneration=upload.getGenerationId();uploadedWidth=upload.getWidth();uploadedHeight=upload.getHeight();}GLES20.glUniform1i(GLES20.glGetUniformLocation(program,"video"),0);
             float aspect=width/(float)height,cover=canvasMode||!alignment.equals("cover")?1:(float)(Math.abs(Math.cos(Math.toRadians(motion.rotation())))+Math.abs(Math.sin(Math.toRadians(motion.rotation())))*Math.max(aspect,1/aspect));GLES20.glUniform1f(GLES20.glGetUniformLocation(program,"aspect"),aspect);GLES20.glUniform2f(GLES20.glGetUniformLocation(program,"scale"),fit.scaleX()*cover,fit.scaleY()*cover);GLES20.glUniform4f(GLES20.glGetUniformLocation(program,"crop"),u,v,us,vs);GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(program,"transform"),1,false,matrix,0);
             GLES20.glUniform1f(GLES20.glGetUniformLocation(program,"flip"),!canvasMode&&effects.options.optBoolean("flip")?1:0);
@@ -154,9 +160,12 @@ final class WallpaperRenderer {
             float[] rgb=dev.workshopvideo.core.PictureColors.matrix((float)effects.options.optDouble("brightness",1),(float)effects.options.optDouble("contrast",1),(float)effects.options.optDouble("saturation",1),(float)effects.options.optDouble("hue",0));float[] colorMatrix={rgb[0],rgb[4],rgb[8],rgb[1],rgb[5],rgb[9],rgb[2],rgb[6],rgb[10]};GLES20.glUniformMatrix3fv(GLES20.glGetUniformLocation(program,"colors"),1,false,colorMatrix,0);GLES20.glUniform3f(GLES20.glGetUniformLocation(program,"colorBias"),rgb[3],rgb[7],rgb[11]);
             GLES20.glUniform1f(GLES20.glGetUniformLocation(program,"angle"),(float)Math.toRadians(camera==null?motion.rotation():camera.angle()));
             int position=GLES20.glGetAttribLocation(program,"aPosition"),uv=GLES20.glGetAttribLocation(program,"aUv");quad.position(0);GLES20.glVertexAttribPointer(position,2,GLES20.GL_FLOAT,false,16,quad);quad.position(2);GLES20.glVertexAttribPointer(uv,2,GLES20.GL_FLOAT,false,16,quad);GLES20.glEnableVertexAttribArray(position);GLES20.glEnableVertexAttribArray(uv);GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP,0,4);
-            if(!canvasMode)drawOverlay();
+            }
+            if(!canvasMode||layers||usingSource)drawOverlay();
             int glError=GLES20.glGetError();if(glError!=GLES20.GL_NO_ERROR)throw new IllegalStateException("壁纸绘制失败，GL=0x"+Integer.toHexString(glError));
+            long swapAt=System.nanoTime();
             if(!EGL14.eglSwapBuffers(display,window))throw new IllegalStateException("壁纸显示区域已失效，EGL=0x"+Integer.toHexString(EGL14.eglGetError()));
+            renderStats.frame(canvasMode?(layers?"scene-layers":usingSource?"scene-cache":"scene-canvas"):"video",effects.options.optInt("fps",120),renderStart,preparedAt,swapAt,System.nanoTime());
             displayed=true;if(frozen()){handler.removeCallbacks(watchdog);stopFrames();if(player!=null&&ready)player.pause();}
             if((update||canvasMode)&&++frames>=(offscreen?3:1)&&!announced){announced=true;if(events!=null)events.rendered();}
         }catch(Exception e){error(e);}
@@ -172,7 +181,7 @@ final class WallpaperRenderer {
     }
     private void error(Throwable problem){if(failed)return;failed=true;String message=VideoApp.error(problem);if(events!=null)events.failed(message);release();}
     private void releaseContent(){
-        handler.removeCallbacks(watchdog);stopFrames();if(canvasContent!=null){canvasContent.close();canvasContent=null;}if(canvasBitmap!=null){canvasBitmap.recycle();canvasBitmap=null;}if(overlay!=null){overlay.recycle();overlay=null;}ready=hasFrame=framePending=false;
+        handler.removeCallbacks(watchdog);stopFrames();if(sceneGpu!=null){sceneGpu.close();sceneGpu=null;}if(canvasContent!=null){canvasContent.close();canvasContent=null;}if(canvasBitmap!=null){canvasBitmap.recycle();canvasBitmap=null;}if(overlay!=null){overlay.recycle();overlay=null;}ready=hasFrame=framePending=false;
         if(player!=null){MediaPlayer old=player;player=null;try{old.setSurface(null);old.release();}catch(Exception ignored){}}
         if(decoderSurface!=null){decoderSurface.release();decoderSurface=null;}if(texture!=null){texture.release();texture=null;}
         if(display!=EGL14.EGL_NO_DISPLAY){if(overlayProgram!=0)GLES20.glDeleteProgram(overlayProgram);if(overlayTexture!=0)GLES20.glDeleteTextures(1,new int[]{overlayTexture},0);if(program!=0)GLES20.glDeleteProgram(program);if(textureId!=0)GLES20.glDeleteTextures(1,new int[]{textureId},0);}

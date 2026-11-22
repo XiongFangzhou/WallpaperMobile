@@ -22,7 +22,9 @@
 - Phone interaction is manual. USB operations are limited to selected installation and read-only diagnostics. Do not run input or wallpaper-changing automation on physical devices.
 - Full emulator checks are available when requested. Restrict emulator commands to their designated virtual device.
 - Use launcher offsets/page metadata when available, with aspect-based segmentation and automatic gesture compatibility enabled by default. System offsets take priority within the current gesture; a past callback must not permanently disable fallback. Preserve an explicit system-only option. Never infer committed launcher pages solely from swipe velocity. Preserve full-image scrolling and smooth motion.
+- Optional precise launcher sync must subscribe only to the resolved HOME package's numeric scroll events. Never request window contents, interaction-window retrieval, touch exploration or gesture execution. Keep authorization manual and preserve operation without the service. Correct fallback estimates with observed positions, including aborted gestures and page boundaries.
 - Render through one vsync-aligned frame clock, coalescing input and decoded frames. Retain manual frame budgets and pause idle/background/power-saver work. Distinguish render caps from measured phone FPS.
+- Keep bitmap scene layers resident on the GPU during paging, parallax and X-ray. Verify transforms, premultiplied alpha, color adjustment and reveal against native Canvas reference frames; do not reintroduce full-frame Canvas uploads for these interactions.
 - Keep battery saver policy global, outside per-wallpaper visual options. In configured battery saver mode, retain a visible frame and suspend playback, animation and sensor sampling. Resume according to visibility and saved options.
 
 ## Release

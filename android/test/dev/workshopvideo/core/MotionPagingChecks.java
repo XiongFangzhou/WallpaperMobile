@@ -19,7 +19,7 @@ final class MotionPagingChecks {
         LauncherPaging strict=new LauncherPaging();strict.pages(5);strict.system(0,.25f,0);
         for(long duration:new long[]{16,100,600}){strict.touch(.9f,.5f,0,0);strict.touch(.1f,.5f,2,duration);strict.touch(.1f,.5f,1,duration+10);check(strict.value()==0,"default paging does not predict a page from swipe speed "+duration);}
         strict.touch(.9f,.5f,0,1000);strict.system(.16f,.25f,1020);check(close(strict.value(),.16f),"background tracks actual in-flight launcher offset");strict.system(0,.25f,1100);strict.touch(.2f,.5f,1,1120);check(strict.value()==0,"aborted launcher page returns background to exact original position");
-        LauncherPaging compat=new LauncherPaging();compat.pages(5);compat.gestureFallback(true);compat.system(1,-1,0);compat.touch(.7f,.5f,0,100);compat.touch(.63f,.5f,2,116);compat.touch(.63f,.5f,1,120);check(compat.value()==.5f,"quick short flick no longer commits a compatibility page");
+        LauncherPaging compat=new LauncherPaging();compat.pages(5);compat.gestureFallback(true);compat.system(1,-1,0);compat.touch(.7f,.5f,0,100);compat.touch(.63f,.5f,2,116);compat.touch(.63f,.5f,1,120);check(compat.value()==.75f,"quick short fling commits with both distance and recent speed");
         compat.system(.5f,.25f,200);compat.touch(.9f,.5f,0,300);compat.touch(.1f,.5f,2,320);compat.touch(.1f,.5f,1,340);check(compat.value()==.75f,"a previous system offset does not disable a later gesture without callbacks");
     }
 }

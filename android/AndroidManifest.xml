@@ -11,6 +11,7 @@
   <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
   <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="false" />
   <queries>
+    <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.HOME" /></intent>
     <intent><action android:name="android.service.wallpaper.CHANGE_LIVE_WALLPAPER" /></intent>
     <intent><action android:name="android.service.wallpaper.WallpaperService" /></intent>
     <intent><action android:name="android.service.wallpaper.LIVE_WALLPAPER_CHOOSER" /></intent>
@@ -27,6 +28,10 @@
     <service android:name=".VideoWallpaperService" android:exported="true" android:permission="android.permission.BIND_WALLPAPER" android:label="WallpaperMobile 动态壁纸">
       <intent-filter><action android:name="android.service.wallpaper.WallpaperService" /></intent-filter>
       <meta-data android:name="android.service.wallpaper" android:resource="@xml/video_wallpaper" />
+    </service>
+    <service android:name=".LauncherScrollService" android:exported="true" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:label="@string/launcher_sync_title">
+      <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
+      <meta-data android:name="android.accessibilityservice" android:resource="@xml/launcher_sync" />
     </service>
     <service android:name=".VideoDownloadService" android:exported="false" android:foregroundServiceType="dataSync" />
     <activity android:name=".VideoPlayerActivity" android:exported="false"

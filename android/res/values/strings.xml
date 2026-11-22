@@ -1,1 +1,5 @@
-<resources><string name="wallpaper_description">WallpaperMobile · 应用内视频动态壁纸，静音循环，支持适配与桌面滑动。</string></resources>
+<resources>
+    <string name="wallpaper_description">WallpaperMobile · 应用内视频动态壁纸，静音循环，支持适配与桌面滑动。</string>
+    <string name="launcher_sync_title">WallpaperMobile 精确桌面同步</string>
+    <string name="launcher_sync_description">读取当前桌面的横向滚动位置，让壁纸与实际翻页对齐。仅订阅桌面滚动事件，不读取页面内容，不执行点击或滑动。</string>
+</resources>
