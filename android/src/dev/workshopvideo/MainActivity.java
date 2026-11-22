@@ -175,7 +175,7 @@ public final class MainActivity extends Activity {
             finally{app.connecting=false;app.changed();runOnUiThread(this::refreshStatus);}});
     }
     private void aboutDialog(){
-        AppSheet sheet=new AppSheet(this,"WallpaperMobile","版本 0.5.5",null);
+        AppSheet sheet=new AppSheet(this,"WallpaperMobile","版本 0.5.6",null);
         TextView info=text("从 Steam 创意工坊搜索和下载视频、图片与可解析的场景，电脑无需开机。\n\n内容保存在应用内，不加入系统相册。在“已保存”单击播放，长按可收藏、删除或设为壁纸；下载进度也显示在这里。收藏独立于下载。卸载或清除应用数据会删除已下载内容。\n\n默认使用最近一年趋势排序；尚未验证与 WE 的完整结果顺序一致。\n\n开源依赖及许可见安装包 assets/THIRD_PARTY_NOTICES.txt。",13,MUTED);info.setLineSpacing(dp(4),1);sheet.field(info);
         sheet.footerButton("知道了",true,()->sheet.dialog.dismiss());sheet.show();
     }

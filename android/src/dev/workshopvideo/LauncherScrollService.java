@@ -19,6 +19,7 @@ public final class LauncherScrollService extends AccessibilityService {
         info.eventTypes=launcher.isEmpty()?0:AccessibilityEvent.TYPE_VIEW_SCROLLED;
         info.packageNames=new String[]{launcher};info.feedbackType=AccessibilityServiceInfo.FEEDBACK_GENERIC;info.notificationTimeout=0;info.flags=0;
         setServiceInfo(info);LauncherSync.connected(!launcher.isEmpty());
+        android.util.Log.i("WMLauncher","connected home="+launcher+" enabled="+AppSettings.launcherSync(this)+" capabilities="+info.getCapabilities());
     }
     @Override public void onAccessibilityEvent(AccessibilityEvent event){
         if(!AppSettings.launcherSync(this)||event==null||event.getEventType()!=AccessibilityEvent.TYPE_VIEW_SCROLLED||!launcher.contentEquals(event.getPackageName()==null?"":event.getPackageName()))return;
@@ -30,6 +31,9 @@ public final class LauncherScrollService extends AccessibilityService {
     }
     @Override public void onInterrupt(){}
     @Override public void onDestroy(){LauncherSync.connected(false);super.onDestroy();}
+    @Override protected void dump(java.io.FileDescriptor fd,java.io.PrintWriter out,String[] args){
+        out.println("home="+launcher+" enabled="+AppSettings.launcherSync(this)+" connected="+LauncherSync.connected()+" position="+LauncherSync.position()+" eventTime="+LauncherSync.time());
+    }
     static void settings(android.app.Activity activity){
         String component=new ComponentName(activity,LauncherScrollService.class).flattenToString();
         // The details action requires a privileged permission on newer Android versions.

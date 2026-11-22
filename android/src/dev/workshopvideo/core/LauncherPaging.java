@@ -19,12 +19,17 @@ public final class LauncherPaging {
  public boolean dragging(){return down&&horizontal&&!systemInGesture;}
  public void reset(){value=.5f;raw=Float.NaN;down=horizontal=systemInGesture=false;count=0;}
  public void system(float x,float step,long now){
+  system(x,step,now,false);
+ }
+ public void system(float x,float step,long now,boolean trustedInitial){
   int n=WallpaperPaging.pages(step);if(n>=2)count=n;
   if(pageCount()<=1){value=.5f;raw=x;return;}
   if(!Float.isFinite(x)||x<0||x>1)return;
-  boolean moving=Float.isFinite(raw)&&Math.abs(x-raw)>.0005f;
+  // A native spring can advance less than .0005 per frame at high refresh rates.
+  // Only an identical callback is a fixed vendor offset; retain every real float change.
+  boolean moving=Float.isFinite(raw)&&Float.compare(x,raw)!=0;
   if(moving){value=x;if(down)systemInGesture=true;}
-  else if(!Float.isFinite(raw)&&n>=2&&!manual)value=x;
+  else if(!Float.isFinite(raw)&&(trustedInitial||n>=2&&!manual))value=x;
   raw=x;
  }
  public boolean touch(float x,float y,int action,long now){

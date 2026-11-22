@@ -25,7 +25,7 @@ public class LauncherSyncChecks {
     }
     @Test public void exactSyncSettingsUseUnifiedSheetAndSeparateSystemAuthorization(){
         try(var controller=Robolectric.buildActivity(android.app.Activity.class).setup()){
-            android.app.Activity activity=controller.get();GeneralSettings.show(activity);android.app.Dialog sheet=org.robolectric.shadows.ShadowDialog.getLatestDialog();android.view.View action=find(sheet.getWindow().getDecorView(),"精确桌面同步");assertNotNull(action);((android.view.View)action.getParent().getParent()).performClick();android.app.Dialog details=org.robolectric.shadows.ShadowDialog.getLatestDialog();assertNotNull(find(details.getWindow().getDecorView(),"使用精确桌面同步"));assertNotNull(find(details.getWindow().getDecorView(),"前往系统开启"));details.dismiss();
+            android.app.Activity activity=controller.get();GeneralSettings.show(activity);android.app.Dialog sheet=org.robolectric.shadows.ShadowDialog.getLatestDialog();android.view.View action=find(sheet.getWindow().getDecorView(),"精确桌面同步");assertNotNull(action);((android.view.View)action.getParent().getParent()).performClick();android.app.Dialog details=org.robolectric.shadows.ShadowDialog.getLatestDialog();assertNotNull(find(details.getWindow().getDecorView(),"辅助事件同步"));assertNotNull(find(details.getWindow().getDecorView(),"前往系统开启"));details.dismiss();
         }
     }
     @Test public void authorizationUsesPublicSettingsActionAndDeniedEntryDoesNotCrash(){
@@ -37,5 +37,17 @@ public class LauncherSyncChecks {
         }
     }
     public static class DeniedActivity extends android.app.Activity {@Override public void startActivity(Intent intent){throw new SecurityException("test protected settings activity");}}
+    @Test public void connectedServiceIsNotReportedAsObservedUntilAValidPositionArrives(){
+        try{LauncherSync.connected(false);assertEquals("尚未开启",LauncherSync.status(true));LauncherSync.connected(true);assertFalse(LauncherSync.observed());assertEquals("已授权 · 尚未收到桌面滚动位置",LauncherSync.status(true));LauncherSync.publish(.25f,100);assertTrue(LauncherSync.observed());assertEquals("已收到桌面滚动位置",LauncherSync.status(true));assertEquals("已暂停",LauncherSync.status(false));}finally{LauncherSync.connected(false);}
+    }
+    @Test public void nativeMotionNeedsNoAccessibilityConnectionAndFixedVendorOffsetIsInsufficient(){
+        try{
+            LauncherSync.connected(false);LauncherSync.resetNative();LauncherSync.nativeOffset(0,-1);LauncherSync.nativeOffset(0,-1);assertFalse(LauncherSync.nativeObserved());LauncherSync.nativeOffset(.0001f,-1);assertTrue(LauncherSync.nativeObserved());assertEquals("系统真实偏移可用",LauncherSync.status(false));assertFalse(LauncherSync.observed());LauncherSync.connected(false);assertTrue(LauncherSync.nativeObserved());
+            LauncherSync.resetNative();LauncherSync.nativeOffset(.5f,.25f);assertTrue(LauncherSync.nativeObserved());
+        }finally{LauncherSync.connected(false);LauncherSync.resetNative();}
+    }
+    @Test public void nativeScrollFlagIsReadWithoutRequestingWritePermission(){
+        android.content.Context context=RuntimeEnvironment.getApplication();String key="pref_key_wallpaper_screen_scrolled_span";try{android.provider.Settings.Secure.putInt(context.getContentResolver(),key,0);assertFalse(LauncherSync.nativeConfigured(context));android.provider.Settings.Secure.putInt(context.getContentResolver(),key,1);assertTrue(LauncherSync.nativeConfigured(context));}finally{android.provider.Settings.Secure.putString(context.getContentResolver(),key,null);}
+    }
     private android.view.View find(android.view.View root,String title){if(root instanceof android.widget.TextView text&&text.getText().toString().equals(title))return root;if(root instanceof android.view.ViewGroup group)for(int i=0;i<group.getChildCount();i++){android.view.View result=find(group.getChildAt(i),title);if(result!=null)return result;}return null;}
 }
