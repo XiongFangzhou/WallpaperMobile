@@ -33,11 +33,13 @@ final class WallpaperRenderer {
     }};
     private final HandlerThread thread=new HandlerThread("wallpaper-video");
     interface Events {void rendered();void failed(String message);default void pagingAvailable(boolean available){}default void contentSize(int width,int height){}}
+    private final java.util.concurrent.CompletableFuture<Void> released=new java.util.concurrent.CompletableFuture<>();
     private final Handler handler;private final android.content.Context context;private Events events;
     private WallpaperEffects effects=new WallpaperEffects();
     private CanvasWallpaper canvasContent;private Bitmap canvasBitmap;private boolean canvasMode;private long canvasDirtyUntil;private Bitmap overlay;private int overlayProgram,overlayTexture;
     private final Runnable animate=new Runnable(){public void run(){if(closed||failed||!visible)return;draw(false);if(!frozen())handler.postDelayed(this,(pageAnimation.moving()||SystemClock.elapsedRealtime()<pagingUntil)?16:1000/Math.max(15,effects.options.optInt("fps",30)));}};
     void settings(JSONObject options){if(!closed)handler.post(()->{effects.options(options);dirtyCanvas();applySpeed();applyPower();pagingAvailability();});}
+    void configure(JSONObject next){if(!closed)handler.post(()->{if(closed||failed)return;config=next;effects.options(next.optJSONObject("effects"));VideoApp.put(effects.options,"pan",next.optBoolean("pan"));if(canvasContent!=null)canvasContent.options(next);dirtyCanvas();applySpeed();applyPower();pagingAvailability();});}
     void tilt(float x,float y){if(!closed)handler.post(()->{if(frozen())return;effects.tilt(x,y);dirtyCanvas();});}
     void touch(float x,float y,int action){if(!closed)handler.post(()->{if(frozen())return;effects.touch(x,y,action);dirtyCanvas();});}
     private void applySpeed(){if(player!=null&&ready)try{player.setPlaybackParams(player.getPlaybackParams().setSpeed((float)effects.options.optDouble("speed",1)));if(!visible||frozen()&&hasFrame)player.pause();}catch(Exception ignored){}}
@@ -52,9 +54,9 @@ final class WallpaperRenderer {
     WallpaperRenderer(android.content.Context context){this(context,null);}
     WallpaperRenderer(android.content.Context context,Events events){this.context=context;this.events=events;android.os.PowerManager power=context.getSystemService(android.os.PowerManager.class);powerSaving=power!=null&&power.isPowerSaveMode();quad.put(new float[]{-1,-1,0,0, 1,-1,1,0, -1,1,0,1, 1,1,1,1}).position(0);thread.start();handler=new Handler(thread.getLooper());}
     void surface(Surface surface,int width,int height,JSONObject config,boolean visible,Events callbacks){if(!closed)handler.post(()->events=callbacks);surface(surface,width,height,config,visible);}
-    void surface(Surface surface,int width,int height,JSONObject config,boolean visible){if(closed)return;handler.post(()->{release();this.width=Math.max(1,width);this.height=Math.max(1,height);this.config=config;this.visible=visible;failed=false;announced=false;frames=0;offscreen=false;try{renderSurface=ownedSurface(surface);initialize(renderSurface,WallpaperStore.file(context,config));}catch(Exception|OutOfMemoryError e){error(e);}});}
-    void surfaceFile(Surface surface,int width,int height,File file,JSONObject config,boolean visible){if(closed)return;handler.post(()->{release();this.width=Math.max(1,width);this.height=Math.max(1,height);this.config=config;this.visible=visible;failed=false;announced=false;frames=0;offscreen=false;try{renderSurface=ownedSurface(surface);initialize(renderSurface,file);}catch(Exception|OutOfMemoryError e){error(e);}});}
-    void replace(JSONObject next,boolean visible,Events callbacks){if(!closed)handler.post(()->{try{releaseContent();this.config=next;this.events=callbacks;this.visible=visible;failed=false;announced=false;frames=0;initialize(renderSurface,WallpaperStore.file(context,next));}catch(Exception|OutOfMemoryError e){error(e);}});}
+    void surface(Surface surface,int width,int height,JSONObject config,boolean visible){if(closed)return;handler.post(()->{if(closed)return;release();this.width=Math.max(1,width);this.height=Math.max(1,height);this.config=config;this.visible=visible;failed=false;announced=false;frames=0;offscreen=false;try{renderSurface=ownedSurface(surface);initialize(renderSurface,WallpaperStore.file(context,config));}catch(Exception|OutOfMemoryError e){error(e);}});}
+    void surfaceFile(Surface surface,int width,int height,File file,JSONObject config,boolean visible){if(closed)return;handler.post(()->{if(closed)return;release();this.width=Math.max(1,width);this.height=Math.max(1,height);this.config=config;this.visible=visible;failed=false;announced=false;frames=0;offscreen=false;try{renderSurface=ownedSurface(surface);initialize(renderSurface,file);}catch(Exception|OutOfMemoryError e){error(e);}});}
+    void replace(JSONObject next,boolean visible,Events callbacks){if(!closed)handler.post(()->{if(closed)return;try{releaseContent();this.config=next;this.events=callbacks;this.visible=visible;failed=false;announced=false;frames=0;initialize(renderSurface,WallpaperStore.file(context,next));}catch(Exception|OutOfMemoryError e){error(e);}});}
     void resize(int width,int height){if(!closed)handler.post(()->{this.width=Math.max(1,width);this.height=Math.max(1,height);dirtyCanvas();if(canvasContent!=null)resizeCanvas();pagingAvailability();draw(false);});}
     void offset(float value){offset(value,false);}
     void offset(float value,boolean immediate){queuedOffset=value;queuedImmediate=immediate;if(!closed&&offsetQueued.compareAndSet(false,true))handler.post(offsetUpdate);}
@@ -170,6 +172,7 @@ final class WallpaperRenderer {
         if(display!=EGL14.EGL_NO_DISPLAY){EGL14.eglMakeCurrent(display,EGL14.EGL_NO_SURFACE,EGL14.EGL_NO_SURFACE,EGL14.EGL_NO_CONTEXT);if(window!=EGL14.EGL_NO_SURFACE)EGL14.eglDestroySurface(display,window);if(glContext!=EGL14.EGL_NO_CONTEXT)EGL14.eglDestroyContext(display,glContext);synchronized(DISPLAY_LOCK){if(displayLease){displayLease=false;if(--displayUsers==0)EGL14.eglTerminate(display);}}EGL14.eglReleaseThread();}
         displayed=false;display=EGL14.EGL_NO_DISPLAY;glContext=EGL14.EGL_NO_CONTEXT;window=EGL14.EGL_NO_SURFACE;if(renderSurface!=null){renderSurface.release();renderSurface=null;}
     }
-    void closeAsync(){if(closed)return;closed=true;handler.post(()->{try{release();}finally{thread.quitSafely();}});}
-    void close(){if(closed)return;closed=true;CountDownLatch done=new CountDownLatch(1);handler.post(()->{try{release();}finally{done.countDown();thread.quitSafely();}});try{done.await(1500,TimeUnit.MILLISECONDS);}catch(InterruptedException e){Thread.currentThread().interrupt();}}
+    void closeAsync(){if(closed)return;closed=true;handler.post(()->{try{release();}finally{thread.quitSafely();released.complete(null);}});}
+    void closeAsync(Runnable finished){released.thenRun(finished);closeAsync();}
+    void close(){closeAsync();try{released.get(1500,TimeUnit.MILLISECONDS);}catch(InterruptedException e){Thread.currentThread().interrupt();}catch(java.util.concurrent.ExecutionException|java.util.concurrent.TimeoutException ignored){}}
 }

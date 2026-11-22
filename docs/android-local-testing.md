@@ -17,10 +17,11 @@ python tools/check_motion_host.py
 
 ```powershell
 python tools/prepare_android_graphics_tests.py
-python tools/check_android_graphics.py dev.workshopvideo.PictureSettingsChecks dev.workshopvideo.SceneGraphicsChecks
+python tools/build_android.py --compile-only
+python tools/check_android_graphics.py dev.workshopvideo.SettingsUiChecks dev.workshopvideo.PreviewLifecycleChecks dev.workshopvideo.PictureSettingsChecks dev.workshopvideo.SceneGraphicsChecks
 ```
 
-Robolectric API 35 的原生图形检查覆盖实际颜色像素、图层、X-ray、设置控件和背景翻页。两个外部样本用例从 `WVB_WORKSHOP_DIR` 读取自行准备的工坊素材，未配置时跳过；样本不随源码分发。
+Robolectric API 35 的原生图形检查覆盖实际颜色像素、图层、X-ray、设置控件、调色面板和背景翻页。预览生命周期检查运行实际设置页的方法，以延迟释放的显示后端替身检查连接顺序。两个外部样本用例从 `WVB_WORKSHOP_DIR` 读取自行准备的工坊素材，未配置时跳过；样本不随源码分发。
 
 ## 完整模拟器
 

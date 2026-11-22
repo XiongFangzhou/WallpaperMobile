@@ -68,6 +68,9 @@ public final class CoreChecks {
         FrameSelectionChecks.run();
         PaginationChecks.run();
         DesktopBehaviorChecks.run();
+        check(RenderFailure.transientSurface("无法连接壁纸显示区域，EGL=0x3003"),"window allocation failure is transient, not media incompatibility");
+        check(RenderFailure.transientSurface("EGL=0x300d"),"surface loss is retryable");
+        check(!RenderFailure.transientSurface("视频编码不受支持"),"decoder incompatibility is not masked by surface recovery");
         System.out.println("PASS: "+checks+" core invariants");
         if(args.length>0 && args[0].equals("--network")) {
             if(args.length>1 && args[1].equals("--debug"))
