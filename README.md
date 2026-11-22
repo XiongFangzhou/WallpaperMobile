@@ -20,7 +20,7 @@ WallpaperMobile 是一款原生 Android 应用，集工坊检索、资源下载�
 | 桌面滚动 | 跟随启动器实际翻页，自动或自定义 1～12 段；另提供桌面滑动兼容选项 |
 | 省电静态 | 可在系统省电模式下暂停为当前静态画面，退出省电后恢复播放与交互 |
 
-下载文件保存在应用私有目录，不进入手机相册。登录会话使用 Android Keystore 加密保存，应用不保存 Steam 密码。
+下载文件保存在应用私有目录，不进入手机相册。登录会话使用 Android Keystore 加密保存，应用不保存 Steam 密码。更换账号时，先在右上角菜单确认退出，再单独登录其他账号。
 
 ## 安装与开始使用
 
@@ -33,13 +33,19 @@ WallpaperMobile 是一款原生 Android 应用，集工坊检索、资源下载�
 
 视频壁纸的运动模式可选择关闭、设备倾斜或桌面滚动。画面对齐提供 铺满、拉伸和自由构图。省电静态开关位于右上角菜单的「通用设置」，对所有壁纸生效。
 
-首次启用动态壁纸时，跟随系统页面完成设置。桌面与锁屏的可选范围随 Android 版本和手机系统而异。桌面滚动默认自动适配：手势跟随与系统偏移协作，当前手势有系统偏移时优先同步系统；系统未连续报告时，使用横滑距离补偿。短滑、回拖或取消会回位，不再单凭速度提交翻页。启动器没有报告页数时，可手动调整背景分段。右上角「通用设置」的「桌面滑动兼容」默认开启，关闭后仅跟随系统偏移。手势补偿依据触摸估算，实际桌面布局仍由启动器管理。
+首次启用动态壁纸时，跟随系统页面完成设置。桌面与锁屏的可选范围随 Android 版本和手机系统而异。桌面滚动默认自动适配：手势跟随与系统偏移协作，当前手势有系统偏移时优先同步系统；系统未连续报告时，使用横滑距离补偿。短滑、回拖或取消会回位，不再单凭速度提交翻页。启动器没有报告页数时，可手动调整背景分段。右上角「通用设置」的「桌面滑动兼容」默认开启，关闭后仅跟随系统偏移。如果启动器只返回固定偏移且不报告最终页码，手势兼容无法确认实际翻页结果；严格同步需要启动器提供真实进度。实际桌面布局由启动器管理。
 
 ### 支持的内容
 
 视频使用 Android 媒体解码；图片支持常见静态格式及 GIF / 动态 WebP。工坊场景会在下载时解析并转换为手机运行版本，支持基础图片图层、姿态视差和特定双图结构的触摸 X-ray。SceneScript、自定义着色器、复杂粒子等场景效果仍在逐步适配。
 
 主线应用自带壁纸引擎。**Hydrogen** 是通过官方 Wallpaper Engine Android 导入和设置壁纸的归档版本，两种版本沿用相同包名。Hydrogen 已保存的官方 MPKG 可在主线重新下载适配。
+
+### 绘制帧率
+
+默认绘制上限为 120 帧，使用屏幕刷新回调合并动画、视频帧和手势绘制；低刷新率屏幕按实际刷新节奏运行。场景设置可选择 15～120 帧，较早版本保存的默认 30 帧会升级为新的默认值，之后手动选择的值会保留。视频维持原始帧率，背景移动与交互按绘制上限更新。
+
+静止画面不持续提交绘制，退出到后台或开启省电静态后暂停。实际帧率取决于场景复杂度、设备性能与系统调度。
 
 ## 从源码构建
 
@@ -59,7 +65,7 @@ WallpaperMobile 是一款原生 Android 应用，集工坊检索、资源下载�
 
 脚本会准备 Android SDK / Build Tools、恢复锁定的依赖、运行核心检查，并构建签名 APK。首次执行需要下载工具和依赖，后续使用项目内缓存。
 
-生成的安装包位于 `dist/WallpaperMobile.apk` 和 `dist/WallpaperMobile-0.5.3.apk`。构建缓存、SDK、依赖和签名均保存在项目目录内。自行构建会使用自己的本地签名，后续更新请保留 `.tools/signing`。
+生成的安装包位于 `dist/WallpaperMobile.apk` 和 `dist/WallpaperMobile-0.5.4.apk`。构建缓存、SDK、依赖和签名均保存在项目目录内。自行构建会使用自己的本地签名，后续更新请保留 `.tools/signing`。
 
 也可以分步运行：
 
@@ -95,7 +101,7 @@ Android 原生图形检查：
 ```powershell
 python tools/prepare_android_graphics_tests.py
 python tools/build_android.py --compile-only
-python tools/check_android_graphics.py dev.workshopvideo.GeneralAndMotionChecks dev.workshopvideo.SceneCompositionChecks dev.workshopvideo.SettingsUiChecks dev.workshopvideo.PreviewLifecycleChecks dev.workshopvideo.PictureSettingsChecks dev.workshopvideo.SceneGraphicsChecks
+python tools/check_android_graphics.py dev.workshopvideo.AccountAndFrameChecks dev.workshopvideo.GeneralAndMotionChecks dev.workshopvideo.SceneCompositionChecks dev.workshopvideo.SettingsUiChecks dev.workshopvideo.PreviewLifecycleChecks dev.workshopvideo.PictureSettingsChecks dev.workshopvideo.SceneGraphicsChecks
 ```
 
 外部工坊样本为可选测试输入，通过 `WVB_WORKSHOP_DIR` 配置；未配置时跳过对应样本用例。其余图形用例使用生成的测试素材。完整 Android 模拟器流程见 [Android 测试指南](docs/android-local-testing.md)。

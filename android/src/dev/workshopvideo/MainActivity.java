@@ -164,20 +164,18 @@ public final class MainActivity extends Activity {
 
     private void accountMenu(){
         boolean authenticated=app.session!=null&&app.session.isAuthenticated();
-        AppSheet sheet=new AppSheet(this,authenticated?(app.guest?"公开浏览":"Steam 账号"):"WallpaperMobile",app.connection,null);
-        sheet.action("settings","通用设置","省电策略与桌面滑动",false,()->GeneralSettings.show(this));
-        if(authenticated)sheet.action("account","切换 Steam 账号","使用其他账号登录",false,()->leaveAccount(true));
-        else sheet.action("account",app.connecting?"正在连接 Steam":"登录 Steam","",false,()->{if(app.connecting)toast(app.connection);else if(app.canRecover())connect(null,null,true,false);else loginDialog();});
-        sheet.action("info","关于 WallpaperMobile","版本 0.5.3",false,this::aboutDialog);
-        if(authenticated)sheet.action("logout","退出并清除登录状态","移除此手机保存的登录凭据",true,()->leaveAccount(false));
-        sheet.show();
+        boolean signedIn=app.hasToken()||app.session!=null&&!app.guest;
+        AccountMenu.show(this,authenticated?(app.guest?"公开浏览":"Steam 账号"):"WallpaperMobile",app.connection,signedIn,app.connecting,()->{if(app.connecting)toast(app.connection);else if(app.guest&&!app.hasToken())loginDialog();else if(app.canRecover())connect(null,null,true,false);else loginDialog();},this::leaveAccount,this::aboutDialog);
     }
-    private void leaveAccount(boolean switchAccount){
+    private void leaveAccount(){
+        if(app.connecting){toast("请等待当前连接完成后再退出。");return;}
         if(!app.enqueued.isEmpty()){toast("请先暂停下载并等待任务停止。");return;}
-        app.forget();SteamSession old=app.session;app.session=null;if(old!=null)app.work.submit(old::close);app.status("尚未连接 Steam");refreshStatus();if(switchAccount)loginDialog();
+        app.connecting=true;app.status("正在退出 Steam…");refreshStatus();
+        app.work.submit(()->{try{synchronized(app.sessionLock){app.forget();SteamSession old=app.session;app.session=null;app.guest=true;if(old!=null)old.close();app.status("尚未连接 Steam");}}
+            finally{app.connecting=false;app.changed();runOnUiThread(this::refreshStatus);}});
     }
     private void aboutDialog(){
-        AppSheet sheet=new AppSheet(this,"WallpaperMobile","版本 0.5.3",null);
+        AppSheet sheet=new AppSheet(this,"WallpaperMobile","版本 0.5.4",null);
         TextView info=text("从 Steam 创意工坊搜索和下载视频、图片与可解析的场景，电脑无需开机。\n\n内容保存在应用内，不加入系统相册。在“已保存”单击播放，长按可收藏、删除或设为壁纸；下载进度也显示在这里。收藏独立于下载。卸载或清除应用数据会删除已下载内容。\n\n默认使用最近一年趋势排序；尚未验证与 WE 的完整结果顺序一致。\n\n开源依赖及许可见安装包 assets/THIRD_PARTY_NOTICES.txt。",13,MUTED);info.setLineSpacing(dp(4),1);sheet.field(info);
         sheet.footerButton("知道了",true,()->sheet.dialog.dismiss());sheet.show();
     }

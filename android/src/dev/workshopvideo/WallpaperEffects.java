@@ -2,10 +2,10 @@ package dev.workshopvideo;
 import android.graphics.*;import android.os.SystemClock;import org.json.JSONObject;import dev.workshopvideo.core.EffectMotion;import dev.workshopvideo.core.GestureDrag;import java.util.*;
 /** Render-thread effect state. Used by both video GL overlays and image/scene Canvas rendering. */
 final class WallpaperEffects {
- private ColorMatrixColorFilter cachedColors;
+ int optionsRevision;private ColorMatrixColorFilter cachedColors;
  JSONObject options=EffectOptions.normalize(null);float gx,gy,tx,ty,sx,sy,offset=.5f;private long last=SystemClock.elapsedRealtime(),touched;private float touchX=.5f,touchY=.5f;private boolean down;private final GestureDrag drag=new GestureDrag();
  float pointerX(){return touchX;}float pointerY(){return touchY;}boolean pointerDown(){return down;}
- void options(JSONObject o){cachedColors=null;options=EffectOptions.normalize(o);if(!options.optBoolean("touch")||options.optBoolean("pan"))drag.reset();}
+ void options(JSONObject o){optionsRevision++;cachedColors=null;options=EffectOptions.normalize(o);if(!options.optBoolean("touch")||options.optBoolean("pan"))drag.reset();}
  void tilt(float x,float y){gx=x;gy=y;}
  void touch(float x,float y,int action){touchX=Math.max(0,Math.min(1,x));touchY=Math.max(0,Math.min(1,y));if(action==0){touched=SystemClock.elapsedRealtime();down=true;}if(action==1||action==3)down=false;if(!options.optBoolean("pan"))drag.touch(touchX,touchY,action);}
  EffectMotion.Frame frame(boolean fit){long now=SystemClock.elapsedRealtime();float dt=(now-last)/1000f;last=now;drag.step(dt);tx=drag.x();ty=drag.y();float x=(options.optBoolean("gyro")?gx:0)*(options.optBoolean("reverseX")?-1:1),y=(options.optBoolean("gyro")?gy:0)*(options.optBoolean("reverseY")?-1:1);sx=EffectMotion.approach(sx,x,dt,(float)options.optDouble("smooth",.18));sy=EffectMotion.approach(sy,y,dt,(float)options.optDouble("smooth",.18));return EffectMotion.compose(sx,sy,options.optBoolean("touch")?tx:0,options.optBoolean("touch")?ty:0,offset,(float)options.optDouble("strength"),(float)options.optDouble("touchStrength"),0,(options.optBoolean("gyro")?Math.max(1.12f,(float)options.optDouble("zoom",1.12)):(float)options.optDouble("zoom",1.12)),(float)options.optDouble("x"),(float)options.optDouble("y"),(float)options.optDouble("rotation"),fit);}
