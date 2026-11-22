@@ -10,7 +10,7 @@ final class GeneralSettings {
     static void show(Activity activity){
         AppSheet sheet=new AppSheet(activity,"通用设置","对所有壁纸生效",null);
         sheet.field(option(activity,"省电时保持静态画面","进入系统省电模式后暂停播放和体感，退出后自动恢复。",AppSettings.batteryStatic(activity),value->AppSettings.batteryStatic(activity,value)));
-        sheet.field(option(activity,"桌面滑动兼容","仅在桌面不提供翻页偏移时开启。通过较长的横滑估算翻页，无法判断桌面是否真正翻页。",AppSettings.gesturePaging(activity),value->AppSettings.gesturePaging(activity,value)));
+        sheet.field(option(activity,"桌面滑动兼容","自动补偿未提供连续偏移的桌面，当前翻页有系统偏移时优先跟随系统。关闭后仅使用系统偏移。",AppSettings.gesturePaging(activity),value->AppSettings.gesturePaging(activity,value)));
         sheet.footerButton("完成",true,()->sheet.dialog.dismiss());sheet.show();
     }
     private static LinearLayout option(Activity activity,String title,String detail,boolean enabled,java.util.function.Consumer<Boolean> changed){

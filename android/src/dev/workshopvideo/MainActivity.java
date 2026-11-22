@@ -168,7 +168,7 @@ public final class MainActivity extends Activity {
         sheet.action("settings","通用设置","省电策略与桌面滑动",false,()->GeneralSettings.show(this));
         if(authenticated)sheet.action("account","切换 Steam 账号","使用其他账号登录",false,()->leaveAccount(true));
         else sheet.action("account",app.connecting?"正在连接 Steam":"登录 Steam","",false,()->{if(app.connecting)toast(app.connection);else if(app.canRecover())connect(null,null,true,false);else loginDialog();});
-        sheet.action("info","关于 WallpaperMobile","版本 0.5.2",false,this::aboutDialog);
+        sheet.action("info","关于 WallpaperMobile","版本 0.5.3",false,this::aboutDialog);
         if(authenticated)sheet.action("logout","退出并清除登录状态","移除此手机保存的登录凭据",true,()->leaveAccount(false));
         sheet.show();
     }
@@ -177,7 +177,7 @@ public final class MainActivity extends Activity {
         app.forget();SteamSession old=app.session;app.session=null;if(old!=null)app.work.submit(old::close);app.status("尚未连接 Steam");refreshStatus();if(switchAccount)loginDialog();
     }
     private void aboutDialog(){
-        AppSheet sheet=new AppSheet(this,"WallpaperMobile","版本 0.5.2",null);
+        AppSheet sheet=new AppSheet(this,"WallpaperMobile","版本 0.5.3",null);
         TextView info=text("从 Steam 创意工坊搜索和下载视频、图片与可解析的场景，电脑无需开机。\n\n内容保存在应用内，不加入系统相册。在“已保存”单击播放，长按可收藏、删除或设为壁纸；下载进度也显示在这里。收藏独立于下载。卸载或清除应用数据会删除已下载内容。\n\n默认使用最近一年趋势排序；尚未验证与 WE 的完整结果顺序一致。\n\n开源依赖及许可见安装包 assets/THIRD_PARTY_NOTICES.txt。",13,MUTED);info.setLineSpacing(dp(4),1);sheet.field(info);
         sheet.footerButton("知道了",true,()->sheet.dialog.dismiss());sheet.show();
     }
