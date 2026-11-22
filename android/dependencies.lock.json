@@ -1,0 +1,364 @@
+[
+  {
+    "coordinate": "androidx.annotation:annotation-experimental:1.3.1",
+    "artifact": "androidx/annotation/annotation-experimental/1.3.1/annotation-experimental-1.3.1.aar",
+    "sha256": "e4d49dc3880b7b7437ea54ce71461e02897faa4e1ecc53e63ecadb1a14c20c9c",
+    "jar": ".tools/android-libs/annotation-experimental-1.3.1.jar",
+    "resources": ".cache/android-aar/annotation-experimental/res",
+    "android_package": "androidx.annotation.experimental"
+  },
+  {
+    "coordinate": "androidx.annotation:annotation-jvm:1.6.0",
+    "artifact": "androidx/annotation/annotation-jvm/1.6.0/annotation-jvm-1.6.0.jar",
+    "sha256": "60b10b5ef5769b79570172e015b8159405c92f034ba88b9391a977589c9deb4e",
+    "jar": ".tools/android-libs/annotation-jvm-1.6.0.jar"
+  },
+  {
+    "coordinate": "androidx.annotation:annotation:1.6.0",
+    "artifact": "androidx/annotation/annotation/1.6.0/annotation-1.6.0.jar",
+    "sha256": "fbc64f5c44a7added8b6eab517cf7d70555e25153bf5d44a6ed9b0e5312f7de9",
+    "jar": ".tools/android-libs/annotation-1.6.0.jar"
+  },
+  {
+    "coordinate": "androidx.arch.core:core-common:2.1.0",
+    "artifact": "androidx/arch/core/core-common/2.1.0/core-common-2.1.0.jar",
+    "sha256": "fe1237bf029d063e7f29fe39aeaf73ef74c8b0a3658486fc29d3c54326653889",
+    "jar": ".tools/android-libs/core-common-2.1.0.jar"
+  },
+  {
+    "coordinate": "androidx.arch.core:core-runtime:2.1.0",
+    "artifact": "androidx/arch/core/core-runtime/2.1.0/core-runtime-2.1.0.aar",
+    "sha256": "dd77615bd3dd275afb11b62df25bae46b10b4a117cd37943af45bdcbf8755852",
+    "jar": ".tools/android-libs/core-runtime-2.1.0.jar"
+  },
+  {
+    "coordinate": "androidx.collection:collection:1.2.0",
+    "artifact": "androidx/collection/collection/1.2.0/collection-1.2.0.jar",
+    "sha256": "16d77e8c443fa55fe9a6074d00445d520ca5c9f913cefdbf4828356255214e42",
+    "jar": ".tools/android-libs/collection-1.2.0.jar"
+  },
+  {
+    "coordinate": "androidx.concurrent:concurrent-futures:1.0.0",
+    "artifact": "androidx/concurrent/concurrent-futures/1.0.0/concurrent-futures-1.0.0.jar",
+    "sha256": "5595a40e278a7b39fa78a09490e3d7f3faa95c7b01447148bd38b5ade0605c35",
+    "jar": ".tools/android-libs/concurrent-futures-1.0.0.jar"
+  },
+  {
+    "coordinate": "androidx.core:core:1.8.0",
+    "artifact": "androidx/core/core/1.8.0/core-1.8.0.aar",
+    "sha256": "48c64a15ec3eb11bfb33339e5ceb70ec7f821bd2dfa2eb8675ebd5353317e792",
+    "jar": ".tools/android-libs/core-1.8.0.jar",
+    "resources": ".cache/android-aar/core/res",
+    "android_package": "androidx.core"
+  },
+  {
+    "coordinate": "androidx.exifinterface:exifinterface:1.3.6",
+    "artifact": "androidx/exifinterface/exifinterface/1.3.6/exifinterface-1.3.6.aar",
+    "sha256": "1804105e9e05fdd8f760413bad5de498c381aa329f4f9d94c851bc891ac654c6",
+    "jar": ".tools/android-libs/exifinterface-1.3.6.jar"
+  },
+  {
+    "coordinate": "androidx.lifecycle:lifecycle-common:2.3.1",
+    "artifact": "androidx/lifecycle/lifecycle-common/2.3.1/lifecycle-common-2.3.1.jar",
+    "sha256": "15848fb56db32f4c7cdc72b324003183d52a4884d6bf09be708ac7f587d139b5",
+    "jar": ".tools/android-libs/lifecycle-common-2.3.1.jar"
+  },
+  {
+    "coordinate": "androidx.lifecycle:lifecycle-runtime:2.3.1",
+    "artifact": "androidx/lifecycle/lifecycle-runtime/2.3.1/lifecycle-runtime-2.3.1.aar",
+    "sha256": "dd294f4a689c71ff877fd41f3b67a3a62f7760d44ce420e6130f1fc3569d8f00",
+    "jar": ".tools/android-libs/lifecycle-runtime-2.3.1.jar",
+    "resources": ".cache/android-aar/lifecycle-runtime/res",
+    "android_package": "androidx.lifecycle.runtime"
+  },
+  {
+    "coordinate": "androidx.media3:media3-common:1.5.1",
+    "artifact": "androidx/media3/media3-common/1.5.1/media3-common-1.5.1.aar",
+    "sha256": "ee69fc48b9ea9c5e1381cbf89bcab96e254fd7bd1f31891642bb4e1c1f6c6fd7",
+    "jar": ".tools/android-libs/media3-common-1.5.1.jar"
+  },
+  {
+    "coordinate": "androidx.media3:media3-container:1.5.1",
+    "artifact": "androidx/media3/media3-container/1.5.1/media3-container-1.5.1.aar",
+    "sha256": "b163c43acbb47244b3ffedc5f216f349cfc8ca9585d3b73b7f32b7228fd63dff",
+    "jar": ".tools/android-libs/media3-container-1.5.1.jar"
+  },
+  {
+    "coordinate": "androidx.media3:media3-database:1.5.1",
+    "artifact": "androidx/media3/media3-database/1.5.1/media3-database-1.5.1.aar",
+    "sha256": "13bf4ccce6bc9e8ef8e04a62e90fa6c1589b89bee8633f0db9f61ae2c23f6ef6",
+    "jar": ".tools/android-libs/media3-database-1.5.1.jar"
+  },
+  {
+    "coordinate": "androidx.media3:media3-datasource:1.5.1",
+    "artifact": "androidx/media3/media3-datasource/1.5.1/media3-datasource-1.5.1.aar",
+    "sha256": "b86cfb137a94bf471d6b2802415edd4fe66038dab6986682133786ca7dd43de2",
+    "jar": ".tools/android-libs/media3-datasource-1.5.1.jar"
+  },
+  {
+    "coordinate": "androidx.media3:media3-decoder:1.5.1",
+    "artifact": "androidx/media3/media3-decoder/1.5.1/media3-decoder-1.5.1.aar",
+    "sha256": "6cd78cad4c1ef8aa16876fcd923eefc3894b538960798698a891cc7f419b8b34",
+    "jar": ".tools/android-libs/media3-decoder-1.5.1.jar"
+  },
+  {
+    "coordinate": "androidx.media3:media3-exoplayer:1.5.1",
+    "artifact": "androidx/media3/media3-exoplayer/1.5.1/media3-exoplayer-1.5.1.aar",
+    "sha256": "11bb9687acd2c0bdd0a99a32006c8ac632ac138ffd996ae7293f375514721b51",
+    "jar": ".tools/android-libs/media3-exoplayer-1.5.1.jar",
+    "resources": ".cache/android-aar/media3-exoplayer/res",
+    "android_package": "androidx.media3.exoplayer"
+  },
+  {
+    "coordinate": "androidx.media3:media3-extractor:1.5.1",
+    "artifact": "androidx/media3/media3-extractor/1.5.1/media3-extractor-1.5.1.aar",
+    "sha256": "f2a146209e040409ed2cea3daa74932011c3b4ac451427f1738569821b21d084",
+    "jar": ".tools/android-libs/media3-extractor-1.5.1.jar"
+  },
+  {
+    "coordinate": "androidx.versionedparcelable:versionedparcelable:1.1.1",
+    "artifact": "androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar",
+    "sha256": "57e8d93260d18d5b9007c9eed3c64ad159de90c8609ebfc74a347cbd514535a4",
+    "jar": ".tools/android-libs/versionedparcelable-1.1.1.jar"
+  },
+  {
+    "coordinate": "com.github.luben:zstd-jni:1.5.7-6",
+    "artifact": "com/github/luben/zstd-jni/1.5.7-6/zstd-jni-1.5.7-6.aar",
+    "sha256": "7ceecc8bfc2f49817afc34965962c50b1c47ba5f60584e8a96efd4f813e46393",
+    "jar": ".tools/android-libs/zstd-jni-1.5.7-6.jar"
+  },
+  {
+    "coordinate": "com.google.code.findbugs:jsr305:3.0.2",
+    "artifact": "com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.jar",
+    "sha256": "766ad2a0783f2687962c8ad74ceecc38a28b9f72a2d085ee438b7813e928d0c7",
+    "jar": ".tools/android-libs/jsr305-3.0.2.jar"
+  },
+  {
+    "coordinate": "com.google.errorprone:error_prone_annotations:2.28.0",
+    "artifact": "com/google/errorprone/error_prone_annotations/2.28.0/error_prone_annotations-2.28.0.jar",
+    "sha256": "f3fc8a3a0a4020706a373b00e7f57c2512dd26d1f83d28c7d38768f8682b231e",
+    "jar": ".tools/android-libs/error_prone_annotations-2.28.0.jar"
+  },
+  {
+    "coordinate": "com.google.guava:failureaccess:1.0.2",
+    "artifact": "com/google/guava/failureaccess/1.0.2/failureaccess-1.0.2.jar",
+    "sha256": "8a8f81cf9b359e3f6dfa691a1e776985c061ef2f223c9b2c80753e1b458e8064",
+    "jar": ".tools/android-libs/failureaccess-1.0.2.jar"
+  },
+  {
+    "coordinate": "com.google.guava:guava:33.3.1-android",
+    "artifact": "com/google/guava/guava/33.3.1-android/guava-33.3.1-android.jar",
+    "sha256": "2c3e41d1b380f2044d257947a3aa82dabf3ae4b978622745254aa18b6cf89ab0",
+    "jar": ".tools/android-libs/guava-33.3.1-android.jar"
+  },
+  {
+    "coordinate": "com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava",
+    "artifact": "com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar",
+    "sha256": "b372a037d4230aa57fbeffdef30fd6123f9c0c2db85d0aced00c91b974f33f99",
+    "jar": ".tools/android-libs/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar"
+  },
+  {
+    "coordinate": "com.google.j2objc:j2objc-annotations:3.0.0",
+    "artifact": "com/google/j2objc/j2objc-annotations/3.0.0/j2objc-annotations-3.0.0.jar",
+    "sha256": "88241573467ddca44ffd4d74aa04c2bbfd11bf7c17e0c342c94c9de7a70a7c64",
+    "jar": ".tools/android-libs/j2objc-annotations-3.0.0.jar"
+  },
+  {
+    "coordinate": "com.google.protobuf:protobuf-java:4.31.1",
+    "artifact": "com/google/protobuf/protobuf-java/4.31.1/protobuf-java-4.31.1.jar",
+    "sha256": "d60dfe7c68a0d38a248cca96924f289dc7e1966a887ee7cae397701af08575ae",
+    "jar": ".tools/android-libs/protobuf-java-4.31.1.jar"
+  },
+  {
+    "coordinate": "com.squareup.okhttp3:okhttp-coroutines:5.3.2",
+    "artifact": "com/squareup/okhttp3/okhttp-coroutines/5.3.2/okhttp-coroutines-5.3.2.jar",
+    "sha256": "44371091a9a5821f58cc8149781f5f8a05691dc562fa3f96775f4310e6aa277e",
+    "jar": ".tools/android-libs/okhttp-coroutines-5.3.2.jar"
+  },
+  {
+    "coordinate": "com.squareup.okhttp3:okhttp-jvm:5.3.2",
+    "artifact": "com/squareup/okhttp3/okhttp-jvm/5.3.2/okhttp-jvm-5.3.2.jar",
+    "sha256": "c771f48075b763f6c322055e21129a94b7de4c1faf3f8f58ace320b0c9517a30",
+    "jar": ".tools/android-libs/okhttp-jvm-5.3.2.jar"
+  },
+  {
+    "coordinate": "com.squareup.okio:okio-jvm:3.16.4",
+    "artifact": "com/squareup/okio/okio-jvm/3.16.4/okio-jvm-3.16.4.jar",
+    "sha256": "2196b993cd34dbbd919e7e01f57a4781b58bee80f86106163e287c20343a96a7",
+    "jar": ".tools/android-libs/okio-jvm-3.16.4.jar"
+  },
+  {
+    "coordinate": "in.dragonbra:javasteam:1.8.0",
+    "artifact": "in/dragonbra/javasteam/1.8.0/javasteam-1.8.0.jar",
+    "sha256": "9ea43dba7bba3f7d8d4a689c62ca5dd986f2910ebb5556de3465bd5430de0721",
+    "jar": ".tools/android-libs/javasteam-1.8.0.jar"
+  },
+  {
+    "coordinate": "io.ktor:ktor-client-cio-jvm:3.3.3",
+    "artifact": "io/ktor/ktor-client-cio-jvm/3.3.3/ktor-client-cio-jvm-3.3.3.jar",
+    "sha256": "f07dc1b330fd8900b584d2101c41ae5a8652da8a13c0a26754203ef30ef811c0",
+    "jar": ".tools/android-libs/ktor-client-cio-jvm-3.3.3.jar"
+  },
+  {
+    "coordinate": "io.ktor:ktor-client-core-jvm:3.3.3",
+    "artifact": "io/ktor/ktor-client-core-jvm/3.3.3/ktor-client-core-jvm-3.3.3.jar",
+    "sha256": "6c403b39cac342892839c251275cc441b27c7f194983b9226cb46bc3a44259f9",
+    "jar": ".tools/android-libs/ktor-client-core-jvm-3.3.3.jar"
+  },
+  {
+    "coordinate": "io.ktor:ktor-client-websockets-jvm:3.3.3",
+    "artifact": "io/ktor/ktor-client-websockets-jvm/3.3.3/ktor-client-websockets-jvm-3.3.3.jar",
+    "sha256": "aa073b8a48f5e57af1759a12fd65eb9d277f23f597ca6014b3c2ae75332d7f4e",
+    "jar": ".tools/android-libs/ktor-client-websockets-jvm-3.3.3.jar"
+  },
+  {
+    "coordinate": "io.ktor:ktor-events-jvm:3.3.3",
+    "artifact": "io/ktor/ktor-events-jvm/3.3.3/ktor-events-jvm-3.3.3.jar",
+    "sha256": "0d786a12576309dedc16f9a2ff464016d51cfc1fe20d7890912200ff2abce0ea",
+    "jar": ".tools/android-libs/ktor-events-jvm-3.3.3.jar"
+  },
+  {
+    "coordinate": "io.ktor:ktor-http-cio-jvm:3.3.3",
+    "artifact": "io/ktor/ktor-http-cio-jvm/3.3.3/ktor-http-cio-jvm-3.3.3.jar",
+    "sha256": "ff43508bf8fcc179bf672ac6e5e058f8010a62adf944a1e0cf0982b6657e064f",
+    "jar": ".tools/android-libs/ktor-http-cio-jvm-3.3.3.jar"
+  },
+  {
+    "coordinate": "io.ktor:ktor-http-jvm:3.3.3",
+    "artifact": "io/ktor/ktor-http-jvm/3.3.3/ktor-http-jvm-3.3.3.jar",
+    "sha256": "7f70cf5011d9cbafc0a2cc8dc51943e47aea5b25d6fb20b2dfb8b5dc6d591085",
+    "jar": ".tools/android-libs/ktor-http-jvm-3.3.3.jar"
+  },
+  {
+    "coordinate": "io.ktor:ktor-io-jvm:3.3.3",
+    "artifact": "io/ktor/ktor-io-jvm/3.3.3/ktor-io-jvm-3.3.3.jar",
+    "sha256": "c1bead8c0a2218456a3b7c2bdfea79ac1395ad5b20f2c502a7f39e35911b2710",
+    "jar": ".tools/android-libs/ktor-io-jvm-3.3.3.jar"
+  },
+  {
+    "coordinate": "io.ktor:ktor-network-jvm:3.3.3",
+    "artifact": "io/ktor/ktor-network-jvm/3.3.3/ktor-network-jvm-3.3.3.jar",
+    "sha256": "f50c3898289c2bfb76aae862b4fa1b19de32e11ed5e3d8090b49eeb57ddf6626",
+    "jar": ".tools/android-libs/ktor-network-jvm-3.3.3.jar"
+  },
+  {
+    "coordinate": "io.ktor:ktor-network-tls-jvm:3.3.3",
+    "artifact": "io/ktor/ktor-network-tls-jvm/3.3.3/ktor-network-tls-jvm-3.3.3.jar",
+    "sha256": "dd5df7a441dce06f3f5b567b5590598bc4d2cf57793d85fb9a00b20e79ab8302",
+    "jar": ".tools/android-libs/ktor-network-tls-jvm-3.3.3.jar"
+  },
+  {
+    "coordinate": "io.ktor:ktor-serialization-jvm:3.3.3",
+    "artifact": "io/ktor/ktor-serialization-jvm/3.3.3/ktor-serialization-jvm-3.3.3.jar",
+    "sha256": "5a77106c9737f5abe3a13c41e567148eb9f3d7223fb2bc9613ec28175920fdf7",
+    "jar": ".tools/android-libs/ktor-serialization-jvm-3.3.3.jar"
+  },
+  {
+    "coordinate": "io.ktor:ktor-sse-jvm:3.3.3",
+    "artifact": "io/ktor/ktor-sse-jvm/3.3.3/ktor-sse-jvm-3.3.3.jar",
+    "sha256": "a87a8a0168671af46bdc762d9f345daca1ea8133a9c9d367334cc1e9b2c4ae2c",
+    "jar": ".tools/android-libs/ktor-sse-jvm-3.3.3.jar"
+  },
+  {
+    "coordinate": "io.ktor:ktor-utils-jvm:3.3.3",
+    "artifact": "io/ktor/ktor-utils-jvm/3.3.3/ktor-utils-jvm-3.3.3.jar",
+    "sha256": "ad020bd9cd5cae0f5f5d743fc8786dfbffb9dc1d8efb76a6b1972b3578c81d7a",
+    "jar": ".tools/android-libs/ktor-utils-jvm-3.3.3.jar"
+  },
+  {
+    "coordinate": "io.ktor:ktor-websocket-serialization-jvm:3.3.3",
+    "artifact": "io/ktor/ktor-websocket-serialization-jvm/3.3.3/ktor-websocket-serialization-jvm-3.3.3.jar",
+    "sha256": "3fc9047c79ca3f174d86c37855ea846025d56341f7774addd1d369668fcb4f82",
+    "jar": ".tools/android-libs/ktor-websocket-serialization-jvm-3.3.3.jar"
+  },
+  {
+    "coordinate": "io.ktor:ktor-websockets-jvm:3.3.3",
+    "artifact": "io/ktor/ktor-websockets-jvm/3.3.3/ktor-websockets-jvm-3.3.3.jar",
+    "sha256": "129cf6de3ee4ef12ad2a265acb932056eac9243ab6e5f053e8eb02e9cb14d894",
+    "jar": ".tools/android-libs/ktor-websockets-jvm-3.3.3.jar"
+  },
+  {
+    "coordinate": "org.apache.commons:commons-lang3:3.20.0",
+    "artifact": "org/apache/commons/commons-lang3/3.20.0/commons-lang3-3.20.0.jar",
+    "sha256": "69e5c9fa35da7a51a5fd2099dfe56a2d8d32cf233e2f6d770e796146440263f4",
+    "jar": ".tools/android-libs/commons-lang3-3.20.0.jar"
+  },
+  {
+    "coordinate": "org.bouncycastle:bcprov-jdk18on:1.80",
+    "artifact": "org/bouncycastle/bcprov-jdk18on/1.80/bcprov-jdk18on-1.80.jar",
+    "sha256": "e8ad209f8c58d291a37ca9750e9e9fac60596956c983e49dd8282381dd8b3249",
+    "jar": ".tools/android-libs/bcprov-jdk18on-1.80.jar"
+  },
+  {
+    "coordinate": "org.checkerframework:checker-qual:3.43.0",
+    "artifact": "org/checkerframework/checker-qual/3.43.0/checker-qual-3.43.0.jar",
+    "sha256": "3fbc2e98f05854c3df16df9abaa955b91b15b3ecac33623208ed6424640ef0f6",
+    "jar": ".tools/android-libs/checker-qual-3.43.0.jar"
+  },
+  {
+    "coordinate": "org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.2.21",
+    "artifact": "org/jetbrains/kotlin/kotlin-stdlib-jdk7/2.2.21/kotlin-stdlib-jdk7-2.2.21.jar",
+    "sha256": "b785922f11e6d91a6dd1d75cb0aef1ce37b83f8de0e3a2139139dfb823bb8a2c",
+    "jar": ".tools/android-libs/kotlin-stdlib-jdk7-2.2.21.jar"
+  },
+  {
+    "coordinate": "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.2.21",
+    "artifact": "org/jetbrains/kotlin/kotlin-stdlib-jdk8/2.2.21/kotlin-stdlib-jdk8-2.2.21.jar",
+    "sha256": "c62275c50ee591ca2f82c7ba42696b791600c25844f47e84bd9460302a0d5238",
+    "jar": ".tools/android-libs/kotlin-stdlib-jdk8-2.2.21.jar"
+  },
+  {
+    "coordinate": "org.jetbrains.kotlin:kotlin-stdlib:2.2.21",
+    "artifact": "org/jetbrains/kotlin/kotlin-stdlib/2.2.21/kotlin-stdlib-2.2.21.jar",
+    "sha256": "6558a3d233da56a20934b32159f9db5f86ed5816ef098f78a2c223dc6abb79dd",
+    "jar": ".tools/android-libs/kotlin-stdlib-2.2.21.jar"
+  },
+  {
+    "coordinate": "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2",
+    "artifact": "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.10.2/kotlinx-coroutines-core-jvm-1.10.2.jar",
+    "sha256": "5ca175b38df331fd64155b35cd8cae1251fa9ee369709b36d42e0a288ccce3fd",
+    "jar": ".tools/android-libs/kotlinx-coroutines-core-jvm-1.10.2.jar"
+  },
+  {
+    "coordinate": "org.jetbrains.kotlinx:kotlinx-coroutines-slf4j:1.10.2",
+    "artifact": "org/jetbrains/kotlinx/kotlinx-coroutines-slf4j/1.10.2/kotlinx-coroutines-slf4j-1.10.2.jar",
+    "sha256": "d65dee3cafa6f7bfaefedb493fc68b5c63abe750734fb8af92fac7a0d3101457",
+    "jar": ".tools/android-libs/kotlinx-coroutines-slf4j-1.10.2.jar"
+  },
+  {
+    "coordinate": "org.jetbrains.kotlinx:kotlinx-io-bytestring-jvm:0.8.0",
+    "artifact": "org/jetbrains/kotlinx/kotlinx-io-bytestring-jvm/0.8.0/kotlinx-io-bytestring-jvm-0.8.0.jar",
+    "sha256": "3da805e9da2ff3cb119f744dcd11de6a18e32a5b933518f17418ba5795cfa775",
+    "jar": ".tools/android-libs/kotlinx-io-bytestring-jvm-0.8.0.jar"
+  },
+  {
+    "coordinate": "org.jetbrains.kotlinx:kotlinx-io-core-jvm:0.8.0",
+    "artifact": "org/jetbrains/kotlinx/kotlinx-io-core-jvm/0.8.0/kotlinx-io-core-jvm-0.8.0.jar",
+    "sha256": "610770cc855edf1c57d9fcd7c69fd040af57adaf8834505f91805de680783d13",
+    "jar": ".tools/android-libs/kotlinx-io-core-jvm-0.8.0.jar"
+  },
+  {
+    "coordinate": "org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:1.9.0",
+    "artifact": "org/jetbrains/kotlinx/kotlinx-serialization-core-jvm/1.9.0/kotlinx-serialization-core-jvm-1.9.0.jar",
+    "sha256": "1f0afa172110e45a7231ef1b44ae8fd84c1ebaff96f3fc3ad68ef8c48120b59c",
+    "jar": ".tools/android-libs/kotlinx-serialization-core-jvm-1.9.0.jar"
+  },
+  {
+    "coordinate": "org.jetbrains:annotations:23.0.0",
+    "artifact": "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
+    "sha256": "7b0f19724082cbfcbc66e5abea2b9bc92cf08a1ea11e191933ed43801eb3cd05",
+    "jar": ".tools/android-libs/annotations-23.0.0.jar"
+  },
+  {
+    "coordinate": "org.slf4j:slf4j-api:2.0.17",
+    "artifact": "org/slf4j/slf4j-api/2.0.17/slf4j-api-2.0.17.jar",
+    "sha256": "7b751d952061954d5abfed7181c1f645d336091b679891591d63329c622eb832",
+    "jar": ".tools/android-libs/slf4j-api-2.0.17.jar"
+  },
+  {
+    "coordinate": "org.tukaani:xz:1.10",
+    "artifact": "org/tukaani/xz/1.10/xz-1.10.jar",
+    "sha256": "95c63c1a55b22dd6453890a419cc1a640f790bbf7d8ae82db1e30aefefb08888",
+    "jar": ".tools/android-libs/xz-1.10.jar"
+  }
+]

@@ -1,0 +1,42 @@
+.cache/
+.tools/
+runtime/
+__pycache__/
+*.pyc
+android/build/
+android/local.properties
+*.keystore
+android/.gradle/
+
+# Local releases, downloaded content, device evidence and upstream research.
+/dist/
+/downloads/
+/ref/
+/docs/research/
+/docs/we-search-observations.json
+/docs/we-filter-alignment-0.2.1.json
+/android/test-device/assets/real-xray.zip
+
+# Credentials and machine-local configuration.
+.env
+.env.*
+!.env.example
+*.jks
+*.p12
+*.pfx
+*.key
+keystore.properties
+secrets.properties
+local.properties
+
+# Generated output.
+node_modules/
+.gradle/
+*.class
+*.dex
+*.apk
+*.apks
+*.aab
+*.log
+*.tmp
+*.part

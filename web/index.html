@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1018">
+  <title>工坊视频</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar"><div class="brand"><span class="mark">帧</span><span>工坊视频<small>WORKSHOP VIDEO</small></span></div><button id="connection" class="connection">正在连接</button></header>
+  <main>
+    <section id="pairing" class="pairing hidden"><h2>把电脑和手机连起来</h2><p>手机与电脑连接同一 Wi-Fi。在 Android App 中输入下方连接地址。</p><div id="pair-links"></div><a class="button primary" href="/download/app.apk">下载 Android 安装包</a><p class="muted">连接地址含配对码，只分享给自己的手机。</p></section>
+    <section id="discover" class="page">
+      <div class="hero"><span class="eyebrow">你的创意工坊，随身收藏</span><h1>喜欢的画面，<br>留在手机里。</h1><p>发现视频壁纸，保存原始视频到本地相册。</p></div>
+      <form id="search-form"><div class="search-row"><input id="search" name="q" type="search" placeholder="搜索标题、关键词…" maxlength="200" autocomplete="off"><button class="button primary" type="submit">搜索</button><button id="filter-toggle" type="button" class="button secondary" aria-expanded="false">筛选</button></div>
+        <div class="quick-row"><button type="button" class="chip active" data-sort="trending">近期热门</button><button type="button" class="chip" data-sort="newest">最新发布</button><button type="button" class="chip" data-sort="popular">最受欢迎</button><button type="button" class="chip" data-sort="subscriptions">最多订阅</button></div>
+        <div id="filters" class="filters hidden">
+          <label>作品类型<select id="type"><option value="Video">视频</option><option value="">全部类型</option><option value="Scene">场景</option><option value="Web">网页</option><option value="Application">应用</option></select></label>
+          <label>内容分类<select id="category"><option value="">全部分类</option><option value="Anime">动漫</option><option value="Game">游戏</option><option value="Nature">自然</option><option value="Landscape">风景</option><option value="Fantasy">幻想</option><option value="Sci-Fi">科幻</option><option value="Abstract">抽象</option><option value="Technology">科技</option><option value="Vehicle">载具</option><option value="Animals">动物</option><option value="Unspecified">未分类</option></select></label>
+          <label>排序<select id="sort"><option value="trending">热门趋势</option><option value="newest">最新发布</option><option value="updated">最近更新</option><option value="popular">最受欢迎</option><option value="subscriptions">最多订阅</option><option value="votes">最多好评</option><option value="relevance">搜索相关度</option></select></label>
+          <label>趋势周期<select id="days"><option value="1">今天</option><option value="7" selected>最近一周</option><option value="30">最近一月</option><option value="90">最近三月</option><option value="365">最近一年</option></select></label>
+          <label>分辨率<select id="resolution"><option value="">全部分辨率</option><option>1920 x 1080</option><option>2560 x 1440</option><option>3840 x 2160</option><option>1080 x 1920</option><option>1440 x 2560</option><option>2160 x 3840</option><option>Other resolution</option></select></label>
+          <label>附加标签<input id="extra-tags" placeholder="Steam 原始标签，用逗号分隔" maxlength="240"></label>
+          <label>发布于此日期之后<input id="date-from" type="date"></label><label>发布于此日期之前<input id="date-to" type="date"></label>
+          <button type="submit" class="button primary">应用筛选</button><button type="button" id="reset" class="button secondary">重置</button>
+        </div>
+      </form>
+      <div class="section-caption"><h2>发现作品</h2><span id="result-count" class="muted">等待搜索</span></div>
+      <div id="message" role="status" class="message hidden"></div><div id="cards" class="cards"></div><button id="load-more" class="button secondary load-more hidden">加载更多</button>
+    </section>
+    <section id="transfers" class="page hidden"><div class="page-title"><span class="eyebrow">从电脑，到相册</span><h1>传输任务</h1><p>视频完整保存并校验后，电脑自动清理本次新增资源。</p></div><div id="job-list" class="list"></div><p class="footnote">电脑原有资源会保留。Steam 自身的缓存记录和日志不在清理范围。</p></section>
+    <section id="saved" class="page hidden"><div class="page-title"><span class="eyebrow">在手机上，随时可见</span><h1>已保存</h1><p>文件保存在 Movies / WallpaperVideoBridge，可从相册或文件管理打开。</p></div><div id="saved-list" class="list"></div></section>
+  </main>
+  <nav class="bottom-nav"><button class="nav-item active" data-page="discover"><span>◈</span>发现</button><button class="nav-item" data-page="transfers"><span>↓</span>传输 <b id="job-badge"></b></button><button class="nav-item" data-page="saved"><span>▣</span>已保存</button></nav>
+  <dialog id="detail"><button id="close-detail" class="close" aria-label="关闭">×</button><img id="detail-image" alt="作品预览"><div class="detail-body"><span id="detail-tags" class="muted"></span><h2 id="detail-title"></h2><p id="detail-info" class="muted"></p><p id="detail-description" class="description"></p><button id="detail-download" class="button primary wide">保存视频</button></div></dialog>
+  <div id="toast" class="toast hidden" role="status"></div>
+</body>
+</html>

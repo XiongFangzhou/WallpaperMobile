@@ -1,0 +1,1 @@
+package dev.workshopvideo;final class WallpaperRenderer {interface Events {void rendered();void failed(String message);default void pagingAvailable(boolean available){}default void contentSize(int w,int h){}}}

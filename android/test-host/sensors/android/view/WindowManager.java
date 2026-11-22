@@ -1,0 +1,1 @@
+package android.view;public class WindowManager {public Display display=new Display();public Display getDefaultDisplay(){return display;}public static class Display {public int rotation;public int getRotation(){return rotation;}}}

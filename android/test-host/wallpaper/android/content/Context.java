@@ -1,0 +1,2 @@
+package android.content;
+import java.io.File;public class Context {public static final int MODE_PRIVATE=0;public final SharedPreferences preferences=new SharedPreferences();public final File files;public Context(File files){this.files=files;files.mkdirs();}public SharedPreferences getSharedPreferences(String n,int m){return preferences;}public File getFilesDir(){return files;}}

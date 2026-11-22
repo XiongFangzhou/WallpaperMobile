@@ -1,0 +1,26 @@
+package dev.workshopvideo.core;
+import in.dragonbra.javasteam.types.*;import in.dragonbra.javasteam.util.Adler32;
+import java.io.*;import java.util.*;import java.security.*;import java.util.concurrent.*;import java.util.concurrent.atomic.*;
+import static dev.workshopvideo.core.CoreChecks.*;
+final class WorkshopRangeChecks {
+ static FileData manifest(byte[] data,int step)throws Exception {FileData f=new FileData();f.setFileName("video.mp4");f.setTotalSize(data.length);f.setFileHash(MessageDigest.getInstance("SHA-1").digest(data));for(int offset=0;offset<data.length;offset+=step){byte[] part=Arrays.copyOfRange(data,offset,Math.min(data.length,offset+step));f.getChunks().add(new ChunkData(MessageDigest.getInstance("SHA-1").digest(part),Adler32.calculate(part),offset,part.length+32,part.length));}Collections.reverse(f.getChunks());return f;}
+ static WorkshopRangeReader.Source memory(byte[] data,AtomicInteger loads,AtomicInteger closes){return new WorkshopRangeReader.Source(){public byte[] load(ChunkData chunk){loads.incrementAndGet();return Arrays.copyOfRange(data,(int)chunk.getOffset(),(int)chunk.getOffset()+chunk.getUncompressedLength());}public void close(){closes.incrementAndGet();}};}
+ static void run()throws Exception {
+  byte[] data=new byte[256*1024+123];new Random(431960).nextBytes(data);FileData f=manifest(data,4096);AtomicInteger loads=new AtomicInteger(),closes=new AtomicInteger();
+  WorkshopRangeReader reader=new WorkshopRangeReader(f,memory(data,loads,closes),3*4096);byte[] buffer=new byte[12000];
+  check(reader.size()==data.length,"stream knows full size from manifest without full download");check(reader.readAt(data.length-20,buffer,3,20)==20&&Arrays.equals(Arrays.copyOfRange(buffer,3,23),Arrays.copyOfRange(data,data.length-20,data.length)),"tail metadata can be read before head, including unsorted chunks");
+  int before=loads.get();reader.readAt(data.length-10,buffer,0,10);check(loads.get()==before,"repeated tail read uses memory cache");
+  check(reader.readAt(0,buffer,0,buffer.length)==buffer.length&&Arrays.equals(buffer,Arrays.copyOf(data,buffer.length)),"head request spans exact Steam chunk boundaries");
+  check(reader.cachedBytes()<=3*4096,"decoded memory cache stays bounded");Random random=new Random(17);
+  for(int i=0;i<80;i++){int position=random.nextInt(data.length);int expected=Math.min(buffer.length,data.length-position);int got=reader.readAt(position,buffer,0,buffer.length);check(got==expected&&Arrays.equals(Arrays.copyOf(buffer,got),Arrays.copyOfRange(data,position,position+got)),"seek request "+i+" returns original byte ranges");check(reader.cachedBytes()<=3*4096,"cache budget after seek "+i);}
+  check(reader.readAt(data.length,buffer,0,1)==-1,"EOF without fetching");check(reader.readAt(Long.MAX_VALUE,buffer,0,1)==-1,"large positive EOF without overflow");check(reader.readAt(data.length,buffer,0,0)==0,"zero-byte request at EOF");rejects(()->reader.readAt(-1,buffer,0,1),"negative stream position");rejects(()->reader.readAt(0,buffer,Integer.MAX_VALUE,1),"destination integer overflow");rejects(()->reader.readAt(0,null,0,1),"null stream buffer");
+  reader.close();reader.close();check(reader.cachedBytes()==0&&closes.get()==1,"close clears memory and cancels source exactly once");rejects(()->reader.readAt(0,buffer,0,1),"read after close");
+  FileData small=manifest(new byte[]{1,2,3,4},4);AtomicInteger retry=new AtomicInteger();try(WorkshopRangeReader corrupt=new WorkshopRangeReader(small,new WorkshopRangeReader.Source(){public byte[] load(ChunkData chunk){return retry.incrementAndGet()==1?new byte[]{9,2,3,4}:new byte[]{1,2,3,4};}public void close(){}})){rejects(()->corrupt.readAt(0,buffer,0,4),"corrupt chunk rejected before playback");check(corrupt.cachedBytes()==0,"corrupt chunk never cached");check(corrupt.readAt(0,buffer,0,4)==4&&buffer[0]==1,"failed chunk can be fetched again");}
+  ChunkData badId=small.getChunks().get(0);badId.getChunkID()[0]^=1;rejects(()->WorkshopRangeReader.verify(badId,new byte[]{1,2,3,4}),"SHA-1 independently checked beyond Adler checksum");
+  byte[] large=new byte[2*1024*1024];try(WorkshopRangeReader capped=new WorkshopRangeReader(manifest(large,large.length),memory(large,new AtomicInteger(),new AtomicInteger()))){check(capped.readAt(0,large,0,large.length)==WorkshopRangeReader.MAX_READ,"single callback returns bounded partial read");}
+  CountDownLatch entered=new CountDownLatch(1),release=new CountDownLatch(1);AtomicInteger stopped=new AtomicInteger();ExecutorService worker=Executors.newSingleThreadExecutor();
+  WorkshopRangeReader blocked=new WorkshopRangeReader(manifest(new byte[]{1,2,3,4},4),new WorkshopRangeReader.Source(){public byte[] load(ChunkData chunk)throws Exception{entered.countDown();release.await();return new byte[]{1,2,3,4};}public void close(){stopped.incrementAndGet();release.countDown();}});
+  Future<?> reading=worker.submit(()->{try{blocked.readAt(0,new byte[4],0,4);throw new AssertionError("closed source returned bytes");}catch(IOException expected){}});
+  try{check(entered.await(2,TimeUnit.SECONDS),"in-flight stream read reached source");blocked.close();reading.get(2,TimeUnit.SECONDS);check(stopped.get()==1&&blocked.cachedBytes()==0,"close interrupts source without waiting on read lock or refilling cache");}finally{release.countDown();blocked.close();worker.shutdownNow();}
+ }
+}

@@ -1,0 +1,1 @@
+package android.content;public class Context {public android.hardware.SensorManager sensors;public android.view.WindowManager windows=new android.view.WindowManager();public <T>T getSystemService(Class<T> type){return type.cast(type==android.hardware.SensorManager.class?sensors:windows);}}

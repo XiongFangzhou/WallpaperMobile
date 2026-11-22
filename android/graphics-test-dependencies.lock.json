@@ -1,0 +1,170 @@
+[
+  {
+    "jar": ".cache/robolectric-maven/org/robolectric/android-all/15-robolectric-13954326/android-all-15-robolectric-13954326.jar",
+    "sha256": "e17105f6c432357e6bb278a527f8e848d01fc56ccee01be77725bea23d871990"
+  },
+  {
+    "jar": ".tools/robolectric-libs/annotation-1.7.0.jar",
+    "sha256": "b11676837cad011a5285d6074418649107ef25eba17131517e9557ef8c9984ed"
+  },
+  {
+    "jar": ".tools/robolectric-libs/annotation-jvm-1.7.0.jar",
+    "sha256": "e36b8e4b8393a4adc74e3d4ab22ad5a36396f0cea2e40b5734eae14937dfd224"
+  },
+  {
+    "jar": ".tools/robolectric-libs/annotations-13.0.jar",
+    "sha256": "ace2a10dc8e2d5fd34925ecac03e4988b2c0f851650c94b8cef49ba1bd111478"
+  },
+  {
+    "jar": ".tools/robolectric-libs/annotations-4.16.1.jar",
+    "sha256": "65a55f0b3cbcfbfc675b0c9075a30edc3b95e6e772a911d874197cc528c9d7b1"
+  },
+  {
+    "jar": ".tools/robolectric-libs/asm-9.8.jar",
+    "sha256": "876eab6a83daecad5ca67eb9fcabb063c97b5aeb8cf1fca7a989ecde17522051"
+  },
+  {
+    "jar": ".tools/robolectric-libs/asm-commons-9.8.jar",
+    "sha256": "3301a1c1cb4c59fcc5292648dac1d7c5aed4c0f067dfbe88873b8cdfe77404f4"
+  },
+  {
+    "jar": ".tools/robolectric-libs/asm-tree-9.8.jar",
+    "sha256": "14b7880cb7c85eed101e2710432fc3ffb83275532a6a894dc4c4095d49ad59f1"
+  },
+  {
+    "jar": ".tools/robolectric-libs/auto-value-annotations-1.11.0.jar",
+    "sha256": "5a055ce4255333b3346e1a8703da5bf8ff049532286fdcd31712d624abe111dd"
+  },
+  {
+    "jar": ".tools/robolectric-libs/bcprov-jdk18on-1.81.jar",
+    "sha256": "249f396412b0c0ce67f25c8197da757b241b8be3ec4199386c00704a2457459b"
+  },
+  {
+    "jar": ".tools/robolectric-libs/conscrypt-openjdk-uber-2.5.2.jar",
+    "sha256": "eaf537d98e033d0f0451cd1b8cc74e02d7b55ec882da63c88060d806ba89c348"
+  },
+  {
+    "jar": ".tools/robolectric-libs/error_prone_annotation-2.41.0.jar",
+    "sha256": "192e99ad3be8a0a44fe210cdc9b0265601dcb446e521ba922c793e50add413c3"
+  },
+  {
+    "jar": ".tools/robolectric-libs/error_prone_annotations-2.36.0.jar",
+    "sha256": "77440e270b0bc9a249903c5a076c36a722c4886ca4f42675f2903a1c53ed61a5"
+  },
+  {
+    "jar": ".tools/robolectric-libs/espresso-idling-resource-3.7.0.jar",
+    "sha256": "93c407fc96a558103d8033c28cbfe8a5ee14439929318b4e9cc426a2b4ffac8c"
+  },
+  {
+    "jar": ".tools/robolectric-libs/failureaccess-1.0.3.jar",
+    "sha256": "cbfc3906b19b8f55dd7cfd6dfe0aa4532e834250d7f080bd8d211a3e246b59cb"
+  },
+  {
+    "jar": ".tools/robolectric-libs/guava-33.4.8-jre.jar",
+    "sha256": "f3d7f57f67fd622f4d468dfdd692b3a5e3909246c28017ac3263405f0fe617ed"
+  },
+  {
+    "jar": ".tools/robolectric-libs/hamcrest-core-1.3.jar",
+    "sha256": "66fdef91e9739348df7a096aa384a5685f4e875584cce89386a7a47251c4d8e9"
+  },
+  {
+    "jar": ".tools/robolectric-libs/icu4j-77.1.jar",
+    "sha256": "b3640b9f416a4411fd33c59abbeea8fd57d024c23e1819bf9673220a97499fe3"
+  },
+  {
+    "jar": ".tools/robolectric-libs/j2objc-annotations-3.0.0.jar",
+    "sha256": "88241573467ddca44ffd4d74aa04c2bbfd11bf7c17e0c342c94c9de7a70a7c64"
+  },
+  {
+    "jar": ".tools/robolectric-libs/javax.annotation-api-1.3.2.jar",
+    "sha256": "e04ba5195bcd555dc95650f7cc614d151e4bcd52d29a10b8aa2197f3ab89ab9b"
+  },
+  {
+    "jar": ".tools/robolectric-libs/javax.inject-1.jar",
+    "sha256": "91c77044a50c481636c32d916fd89c9118a72195390452c81065080f957de7ff"
+  },
+  {
+    "jar": ".tools/robolectric-libs/jspecify-1.0.0.jar",
+    "sha256": "1fad6e6be7557781e4d33729d49ae1cdc8fdda6fe477bb0cc68ce351eafdfbab"
+  },
+  {
+    "jar": ".tools/robolectric-libs/junit-4.13.2.jar",
+    "sha256": "8e495b634469d64fb8acfa3495a065cbacc8a0fff55ce1e31007be4c16dc57d3"
+  },
+  {
+    "jar": ".tools/robolectric-libs/junit-4.16.1.jar",
+    "sha256": "c5b1a61599347ab9a5dc692104b457cd3c31375cd6eecf9b956749309091b5e8"
+  },
+  {
+    "jar": ".tools/robolectric-libs/kotlin-stdlib-1.9.21.jar",
+    "sha256": "3b479313ab6caea4e5e25d3dee8ca80c302c89ba73e1af4dafaa100f6ef9296a"
+  },
+  {
+    "jar": ".tools/robolectric-libs/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar",
+    "sha256": "b372a037d4230aa57fbeffdef30fd6123f9c0c2db85d0aced00c91b974f33f99"
+  },
+  {
+    "jar": ".tools/robolectric-libs/monitor-1.8.0.jar",
+    "sha256": "343391452abb133d044d8e5665ef2e2e670412a5c8a0f0ee992db9ecea7c7896"
+  },
+  {
+    "jar": ".tools/robolectric-libs/nativeruntime-4.16.1.jar",
+    "sha256": "55e339282dde0466dcfbce0fd861562bed59bc43f41012d21d750d07147c9e98"
+  },
+  {
+    "jar": ".tools/robolectric-libs/nativeruntime-dist-compat-1.0.18.jar",
+    "sha256": "a6c34d92c990754e5aee076032a36f8e38fcacb5eb878ebe0a324509f3864eef"
+  },
+  {
+    "jar": ".tools/robolectric-libs/pluginapi-4.16.1.jar",
+    "sha256": "ba72852745647202c40f1937ddca813bfa1be7707f84e3f65beae2c49d592174"
+  },
+  {
+    "jar": ".tools/robolectric-libs/plugins-maven-dependency-resolver-4.16.1.jar",
+    "sha256": "6643b0d9bfdf192a4b971f50e61aa93816b75b9a4334e693f0e2dcedc88b944a"
+  },
+  {
+    "jar": ".tools/robolectric-libs/resources-4.16.1.jar",
+    "sha256": "fb16b2c000cc1b91c6f26b6f6c08459e5b1ee35d99cfb908f20a73a05f3f962c"
+  },
+  {
+    "jar": ".tools/robolectric-libs/robolectric-4.16.1.jar",
+    "sha256": "ebfd48a0255689b0e58a3bbc6c794dc0c0d7b48ce31006fe2613cf7548cba229"
+  },
+  {
+    "jar": ".tools/robolectric-libs/sandbox-4.16.1.jar",
+    "sha256": "14a9bd67d4765c5d6c4ff57ddf339cb447e63df4a46bac650c093a15e2209bdf"
+  },
+  {
+    "jar": ".tools/robolectric-libs/shadowapi-4.16.1.jar",
+    "sha256": "6f997b1c0d169a01a967dff2661a95f4c2c2b5b008e8b9e1fba0b2682d6f8c6d"
+  },
+  {
+    "jar": ".tools/robolectric-libs/shadows-framework-4.16.1.jar",
+    "sha256": "a59802cffec783aa0e7df1489b0c2ce1126ef7cdedb940ffc378eb61e86958c8"
+  },
+  {
+    "jar": ".tools/robolectric-libs/snakeyaml-2.4.jar",
+    "sha256": "ef779af5d29a9dde8cc70ce0341f5c6f7735e23edff9685ceaa9d35359b7bb7f"
+  },
+  {
+    "jar": ".tools/robolectric-libs/sqlite4java-1.0.392.jar",
+    "sha256": "243a64470fda0e86a6fddeb0af4c7aa9426ce84e68cbfe18d75ee5da4b7e0b92"
+  },
+  {
+    "jar": ".tools/robolectric-libs/test-parameter-injector-1.18.jar",
+    "sha256": "e5a7c649c54c412049908247ca5e25fe6921d746849c6017a84dc6044237a4b4"
+  },
+  {
+    "jar": ".tools/robolectric-libs/tracing-1.1.0.jar",
+    "sha256": "5b38ee5a4e85053febd548cb1e9d443af8809c86d209bdcf7d86abb5e7438655"
+  },
+  {
+    "jar": ".tools/robolectric-libs/utils-4.16.1.jar",
+    "sha256": "8088e94dcaa5cd36251492b1e1155ea2b636756b2271dbbb2d325a012c8a30e2"
+  },
+  {
+    "jar": ".tools/robolectric-libs/utils-reflector-4.16.1.jar",
+    "sha256": "f1c49f95cb3a94ec6fcebfdf1753dd12a879ce5703b3b851f63fb8b412210eb9"
+  }
+]

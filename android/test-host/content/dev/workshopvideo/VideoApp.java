@@ -1,0 +1,1 @@
+package dev.workshopvideo;import org.json.*;public class VideoApp {public static void put(JSONObject o,String key,Object value){try{o.put(key,value);}catch(JSONException e){throw new RuntimeException(e);}}}

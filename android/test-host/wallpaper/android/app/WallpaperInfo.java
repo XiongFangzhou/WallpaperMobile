@@ -1,0 +1,1 @@
+package android.app;import android.content.*;public class WallpaperInfo {private final ComponentName component;public WallpaperInfo(ComponentName c){component=c;}public ComponentName getComponent(){return component;}}

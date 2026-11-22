@@ -1,0 +1,1 @@
+package dev.workshopvideo;public class VideoWallpaperService {}

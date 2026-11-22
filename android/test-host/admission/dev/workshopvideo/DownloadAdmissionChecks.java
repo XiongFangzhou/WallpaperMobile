@@ -1,0 +1,23 @@
+package dev.workshopvideo;
+import android.content.*;import org.json.*;import dev.workshopvideo.core.*;import java.io.*;import java.nio.file.*;import java.util.*;import java.util.concurrent.*;import java.awt.image.BufferedImage;import javax.imageio.ImageIO;
+public class DownloadAdmissionChecks {
+ static int checks;static void check(boolean ok,String what){if(!ok)throw new AssertionError(what);checks++;}
+ static void until(java.util.function.BooleanSupplier condition)throws Exception{long end=System.nanoTime()+TimeUnit.SECONDS.toNanos(4);while(!condition.getAsBoolean()&&System.nanoTime()<end)new CountDownLatch(1).await(5,TimeUnit.MILLISECONDS);check(condition.getAsBoolean(),"service completed admission within timeout");}
+ static byte[] bytes(String text){return text.getBytes(java.nio.charset.StandardCharsets.UTF_8);}
+ static void run(VideoDownloadService service,VideoApp app,String id)throws Exception{app.add(id);service.onStartCommand(new Intent().putExtra("id",id),0,1);until(()->!app.enqueued.contains(id));}
+ public static void main(String[] args)throws Exception{
+  Path root=Files.createTempDirectory("admission-");VideoApp app=new VideoApp(root);app.allowNetwork=true;app.allowPublish=true;Context.application=app;VideoDownloadService service=new VideoDownloadService();service.onCreate();
+  try {
+   ByteArrayOutputStream png=new ByteArrayOutputStream();ImageIO.write(new BufferedImage(8,8,BufferedImage.TYPE_INT_ARGB),"png",png);
+   Map<String,byte[]> resources=new LinkedHashMap<>();resources.put("project.json",bytes("{\"type\":\"scene\",\"file\":\"scene.json\"}"));resources.put("scene.json",bytes("{\"general\":{\"orthogonalprojection\":{\"width\":1080,\"height\":2400}},\"objects\":[{\"image\":\"model.json\",\"size\":\"1080 2400\",\"effects\":[{\"file\":\"effects/waterflow/effect.json\"}]}]}"));resources.put("model.json",bytes("{\"material\":\"material.json\"}"));resources.put("material.json",bytes("{\"passes\":[{\"shader\":\"genericimage4\",\"textures\":[\"base.png\"]}]}"));resources.put("base.png",png.toByteArray());WorkshopDownload.payload=resources;
+   String valid="a".repeat(32);run(service,app,valid);JSONObject saved=app.job(valid);check(saved.optString("state").equals("saved")&&saved.optBoolean("adapted")&&saved.optBoolean("compatible"),"real download service publishes automatically adapted scene");check(app.records.size()==1&&saved.optString("itemId").equals("1"),"same task/item is preserved, no local clone record");
+   check(!app.partial(valid).exists()&&!app.transfer(valid).exists(),"successful save removes original bundle, partial and CDN resource parts");
+   try(ContentArchive archive=new ContentArchive(app.video(valid))){check(archive.has("wallpaper-mobile.json")&&!archive.has("scene.json")&&!archive.has("base.png")&&!archive.has("model.json"),"saved file contains runtime result only");}
+   try(WallpaperContent.Scene scene=WallpaperContent.scene(app.video(valid))){check(scene.layers.size()==1,"saved adaptation directly parses as runnable wallpaper");}
+   resources.remove("base.png");String invalid="b".repeat(32);run(service,app,invalid);check(app.job(invalid).optString("state").equals("error")&&app.job(invalid).optString("error").contains("无法转为手机壁纸"),"unconvertible scene exposes failure rather than saved incompatible package");check(!app.video(invalid).exists()&&!app.partial(invalid).exists()&&!app.transfer(invalid).exists(),"rejected conversion clears source and all unfinished resources");check(app.published==1,"rejected scene never reaches publish boundary");
+   WorkshopDownload.payload=new LinkedHashMap<>();WorkshopDownload.payload.put("project.json",bytes("{\"type\":\"web\",\"file\":\"index.html\"}"));WorkshopDownload.payload.put("index.html",bytes("web payload"));WorkshopDownload.resourceReads=0;String web="c".repeat(32);run(service,app,web);check(WorkshopDownload.resourceReads==0,"real service rejects Web metadata before author payload download");check(app.job(web).optString("state").equals("error")&&!app.transfer(web).exists()&&!app.partial(web).exists(),"unsupported metadata also cleans obsolete resumable bytes");
+   check(app.video(valid).isFile(),"cleanup of failed tasks leaves earlier usable wallpaper intact");
+  }finally{service.onDestroy();app.work.shutdownNow();try(var paths=Files.walk(root)){for(Path p:paths.sorted(Comparator.reverseOrder()).toList())Files.deleteIfExists(p);}}
+  System.out.println("PASS: "+checks+" production service automatic adaptation/admission/publication/cleanup checks with synthetic Steam and host Android fixtures");
+ }
+}

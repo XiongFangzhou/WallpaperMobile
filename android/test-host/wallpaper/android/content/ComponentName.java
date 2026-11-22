@@ -1,0 +1,1 @@
+package android.content;public class ComponentName {private String name;public ComponentName(Context c,Class<?> cls){name=cls.getName();}public String flattenToString(){return name;}public boolean equals(Object other){return other instanceof ComponentName&&name.equals(((ComponentName)other).name);}public int hashCode(){return name.hashCode();}}

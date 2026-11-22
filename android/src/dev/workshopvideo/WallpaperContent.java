@@ -1,0 +1,49 @@
+package dev.workshopvideo;
+import android.graphics.*;import android.graphics.drawable.*;import org.json.*;
+import dev.workshopvideo.core.*;import java.io.*;import java.nio.*;import java.nio.charset.StandardCharsets;import java.util.*;
+/** File signatures determine media type. Archive previews never count as scene content. */
+final class WallpaperContent {
+ static boolean archive(File f){try(RandomAccessFile r=new RandomAccessFile(f,"r")){int n=r.readInt();if(n==0x504b0304)return true;r.seek(4);byte[] b=new byte[4];r.readFully(b);return new String(b,StandardCharsets.US_ASCII).equals("PKGM")||new String(b,StandardCharsets.US_ASCII).equals("PKGV");}catch(Exception e){return false;}}
+ static String kind(File f){if(archive(f))return "scene";try{ImageDecoder.ImageInfo[] info=new ImageDecoder.ImageInfo[1];Drawable d=ImageDecoder.decodeDrawable(ImageDecoder.createSource(f),(decoder,i,source)->{info[0]=i;decoder.setAllocator(ImageDecoder.ALLOCATOR_SOFTWARE);decoder.setTargetSampleSize(Math.max(1,Math.max(i.getSize().getWidth(),i.getSize().getHeight())/256));});return d instanceof AnimatedImageDrawable?"animated":"image";}catch(Exception|OutOfMemoryError e){return "video";}}
+ static Bitmap image(File f,int edge)throws Exception {return ImageDecoder.decodeBitmap(ImageDecoder.createSource(f),(d,i,s)->{d.setAllocator(ImageDecoder.ALLOCATOR_SOFTWARE);float ratio=Math.min(1,edge/(float)Math.max(i.getSize().getWidth(),i.getSize().getHeight()));d.setTargetSize(Math.max(1,(int)(i.getSize().getWidth()*ratio)),Math.max(1,(int)(i.getSize().getHeight()*ratio)));});}
+ static Bitmap bitmap(byte[] data)throws Exception {
+  if(data.length>9&&new String(data,0,8,StandardCharsets.US_ASCII).equals("TEXV0005")){TexturePixels.Image tex=TexturePixels.read(data);BitmapFactory.Options embeddedBounds=new BitmapFactory.Options();embeddedBounds.inJustDecodeBounds=true;BitmapFactory.decodeByteArray(tex.bytes(),0,tex.bytes().length,embeddedBounds);if(embeddedBounds.outWidth>0){embeddedBounds.inJustDecodeBounds=false;embeddedBounds.inSampleSize=Math.max(1,(Math.max(embeddedBounds.outWidth,embeddedBounds.outHeight)+2047)/2048);Bitmap embedded=BitmapFactory.decodeByteArray(tex.bytes(),0,tex.bytes().length,embeddedBounds);if(embedded==null)throw new IOException("TEX 内嵌图片无法解码");return embedded;}Bitmap all=Bitmap.createBitmap(TexturePixels.pixels(tex),tex.width(),tex.height(),Bitmap.Config.ARGB_8888);if(tex.imageWidth()!=tex.width()||tex.imageHeight()!=tex.height()){Bitmap crop=Bitmap.createBitmap(all,0,0,tex.imageWidth(),tex.imageHeight());if(crop!=all)all.recycle();return crop;}return all;}
+  BitmapFactory.Options options=new BitmapFactory.Options();options.inJustDecodeBounds=true;BitmapFactory.decodeByteArray(data,0,data.length,options);if(options.outWidth<=0||options.outHeight<=0)throw new IOException("无法解码场景图层");options.inSampleSize=Math.max(1,Math.max(options.outWidth,options.outHeight)/2048);options.inJustDecodeBounds=false;Bitmap b=BitmapFactory.decodeByteArray(data,0,data.length,options);if(b==null)throw new IOException("无法解码场景图层");return b;
+ }
+ static JSONObject json(ContentArchive a,String name)throws Exception{return new JSONObject(new String(a.read(name,2*1024*1024),StandardCharsets.UTF_8).replaceFirst("^\uFEFF",""));}
+ static String project(ContentArchive a){for(String n:a.names())if(n.equals("project.json"))return n;return "";}
+ static String asset(ContentArchive a,String name)throws Exception {String value=ContentArchive.path(name);if(a.has(value))return value;if(a.has(value+".tex"))return value+".tex";if(a.has("materials/"+value+".tex"))return "materials/"+value+".tex";throw new IOException("场景缺少素材："+name);}
+ static String mediaEntry(ContentArchive a)throws Exception {
+  String p=project(a);if(p.isEmpty())return "";JSONObject meta=json(a,p);String type=meta.optString("type");
+  if(type.equalsIgnoreCase("video")||type.equalsIgnoreCase("image")||type.equalsIgnoreCase("scene")&&meta.optString("file").toLowerCase(java.util.Locale.ROOT).endsWith(".pkg")){String name=meta.optString("file");return asset(a,name);}return "";
+ }
+ static final class Layer {Bitmap bitmap,reveal;float revealSize=.3f;String name="";float x,y,w,h,depth=1,alpha=1,rotation;String text;}
+ static final class Scene implements AutoCloseable {int width=1080,height=2400;final ArrayList<Layer> layers=new ArrayList<>();JSONObject defaults=new JSONObject();public void close(){for(Layer l:layers){if(l.bitmap!=null&&!l.bitmap.isRecycled())l.bitmap.recycle();if(l.reveal!=null&&!l.reveal.isRecycled())l.reveal.recycle();}}}
+ static float[] vector(Object value,float...fallback){try{if(value instanceof JSONObject)value=((JSONObject)value).opt("value");if(value instanceof JSONArray){JSONArray a=(JSONArray)value;float[] f=new float[a.length()];for(int i=0;i<f.length;i++)f[i]=(float)a.getDouble(i);return f;}String[] s=String.valueOf(value).trim().split("[ ,]+");float[] f=new float[s.length];for(int i=0;i<s.length;i++)f[i]=Float.parseFloat(s[i]);return f;}catch(Exception e){return fallback;}}
+ static Scene scene(File file)throws Exception {
+  Scene result=new Scene();try(ContentArchive a=new ContentArchive(file)){
+   boolean own=a.has("wallpaper-mobile.json");String entry=own?"wallpaper-mobile.json":"scene.json";
+   if(!own){String p=project(a);if(!p.isEmpty()){String declared=json(a,p).optString("file",entry);if(declared.toLowerCase(Locale.ROOT).endsWith(".json")||!a.has(entry))entry=ContentArchive.path(declared);}}
+   if(!a.has(entry))throw new IOException("包内没有可运行的场景描述；当前支持基础图层场景，不支持全部 WE 特效/脚本");
+   JSONObject root=json(a,entry);if(hasRuntime(root))throw new IOException("该场景依赖尚不兼容的脚本、作者属性绑定或特效，不能完整运行");if(own&&!root.optString("format").equals("WallpaperMobileScene/1"))throw new IOException("场景格式版本不支持");
+   if(own){result.width=root.optInt("width",1080);result.height=root.optInt("height",2400);result.defaults=root.optJSONObject("effects");if(result.defaults==null)result.defaults=new JSONObject();}
+   else {JSONObject general=root.optJSONObject("general");JSONObject projection=general==null?null:general.optJSONObject("orthogonalprojection");if(projection!=null){result.width=projection.optInt("width",1080);result.height=projection.optInt("height",2400);}}
+   if(result.width<1||result.height<1||result.width>16384||result.height>16384)throw new IOException("场景尺寸无效");JSONArray list=root.optJSONArray(own?"layers":"objects");if(list==null||list.length()<1||list.length()>32)throw new IOException("场景需要 1–32 个图层");long pixels=0;
+   for(int i=0;i<list.length();i++){
+    JSONObject object=list.getJSONObject(i);if(!object.optBoolean("visible",true))continue;
+    if(!own&&(hasRuntime(object)||object.has("particle")&&!object.isNull("particle")))throw new IOException("该场景包含尚不兼容的 WE 脚本、粒子或特效，不能完整运行");
+    Layer l=new Layer();l.name=object.optString("name","");result.layers.add(l);String image=object.optString(own?"file":"image","");
+    if(!own&&!image.isEmpty()&&!image.equals("null")){
+     JSONObject model=json(a,asset(a,image));if(hasRuntime(model))throw new IOException("场景模型依赖尚不兼容的特效");String material=model.optString("material");JSONObject mat=json(a,asset(a,material));JSONArray passes=mat.optJSONArray("passes");if(passes==null||passes.length()!=1)throw new IOException("当前只支持单通道基础材质");JSONObject pass=passes.getJSONObject(0);String shader=pass.optString("shader");if(!shader.isEmpty()&&!shader.equals("genericimage2"))throw new IOException("场景使用自定义着色器，当前不能完整运行");JSONArray textures=pass.optJSONArray("textures");if(textures==null||textures.length()!=1)throw new IOException("场景材质纹理不兼容");image=textures.getString(0);
+    }
+    if(!image.isEmpty()&&!image.equals("null")){l.bitmap=bitmap(a.read(asset(a,image),32*1024*1024));pixels+=(long)l.bitmap.getWidth()*l.bitmap.getHeight();if(pixels>16*1024*1024)throw new IOException("场景解码内存超过预算");}
+    else if(own&&object.has("text"))l.text=object.optString("text");else throw new IOException("场景包含尚不支持的非图片对象");
+    if(own&&object.has("xrayFile")){l.reveal=bitmap(a.read(asset(a,object.getString("xrayFile")),32*1024*1024));pixels+=(long)l.reveal.getWidth()*l.reveal.getHeight();if(pixels>16*1024*1024)throw new IOException("场景解码内存超过预算");l.revealSize=(float)Math.max(.01,Math.min(1,object.optDouble("xraySize",.3)));}
+    if(own){l.x=(float)object.optDouble("x",0);l.y=(float)object.optDouble("y",0);l.w=(float)object.optDouble("width",result.width);l.h=(float)object.optDouble("height",result.height);l.depth=(float)object.optDouble("depth",1);l.rotation=(float)object.optDouble("rotation",0);l.alpha=(float)object.optDouble("opacity",1);}
+    else {float[] origin=vector(object.opt("origin"),result.width/2f,result.height/2f),size=vector(object.opt("size"),l.bitmap.getWidth(),l.bitmap.getHeight()),scale=vector(object.opt("scale"),1,1),depth=vector(object.opt("parallaxDepth"),1,1),angle=vector(object.opt("angles"),0,0,0);l.w=size[0]*scale[0];l.h=size[1]*scale[Math.min(1,scale.length-1)];l.x=origin[0]-l.w/2;l.y=result.height-origin[1]-l.h/2;l.depth=depth[0];l.rotation=-(float)Math.toDegrees(angle[angle.length-1]);l.alpha=(float)object.optDouble("alpha",1);}
+    if(!Float.isFinite(l.x)||!Float.isFinite(l.y)||!Float.isFinite(l.rotation)||Math.abs(l.x)>65536||Math.abs(l.y)>65536||!Float.isFinite(l.w)||!Float.isFinite(l.h)||l.w<=0||l.h<=0||l.w>65536||l.h>65536)throw new IOException("场景图层尺寸无效");l.depth=EffectMotion.clamp(l.depth,-2,2);l.alpha=EffectMotion.clamp(l.alpha,0,1);
+   }if(result.layers.isEmpty())throw new IOException("场景没有可显示的图层");return result;
+  }catch(Exception|OutOfMemoryError error){result.close();throw error;}
+ }
+ static boolean hasRuntime(JSONObject o){String text=o.toString();return text.contains("\"script\"")||text.contains("\"user\"")||o.has("effects")&&!o.isNull("effects")&&o.optJSONArray("effects")!=null&&o.optJSONArray("effects").length()>0;}
+}

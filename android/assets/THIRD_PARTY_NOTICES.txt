@@ -1,0 +1,57 @@
+WallpaperMobile 0.3.5
+
+This application is an independent client and is not affiliated with Valve or
+Wallpaper Engine. Steam and Wallpaper Engine are their respective owners' marks.
+
+Runtime dependency versions and artifact hashes are listed in
+android/dependencies.lock.json in the source distribution.
+
+JavaSteam 1.8.0 (MIT)
+https://github.com/Longi94/JavaSteam
+Copyright (c) Long Tran and contributors
+
+Kotlin, kotlinx.coroutines, kotlinx.serialization, kotlinx.io, Ktor (Apache-2.0)
+https://github.com/JetBrains
+
+OkHttp, Okio (Apache-2.0)
+https://github.com/square
+
+Protocol Buffers (BSD-3-Clause)
+https://github.com/protocolbuffers/protobuf
+
+Apache Commons Lang (Apache-2.0)
+https://commons.apache.org/proper/commons-lang/
+
+Bouncy Castle (MIT)
+https://www.bouncycastle.org/licence.html
+
+XZ for Java (public domain / 0BSD, see upstream COPYING)
+https://tukaani.org/xz/java.html
+
+zstd-jni (BSD-2-Clause; bundled Zstandard is BSD-3-Clause)
+https://github.com/luben/zstd-jni
+
+SLF4J (MIT)
+https://www.slf4j.org/license.html
+
+JetBrains annotations (Apache-2.0)
+https://github.com/JetBrains/java-annotations
+
+Full license texts are included under assets/licenses/ in the APK.
+
+AndroidX Media3 1.5.1 and AndroidX support libraries (Apache-2.0)
+Copyright The Android Open Source Project
+https://github.com/androidx/media
+https://android.googlesource.com/platform/frameworks/support/
+
+Guava 33.3.1-android, failureaccess 1.0.2, Error Prone annotations,
+J2ObjC annotations and JSR-305 annotations (Apache-2.0)
+Copyright Google LLC and contributors
+https://github.com/google/guava
+https://github.com/google/error-prone
+https://github.com/google/j2objc
+https://github.com/findbugsproject/findbugs
+
+Checker Framework qualifiers 3.43.0 (MIT)
+https://github.com/typetools/checker-framework
+See licenses/checker-qual-MIT.txt.

@@ -1,0 +1,1 @@
+package android.content;public class Context{public static Object application;public Object getApplication(){return application;}public <T>T getSystemService(Class<T> type){try{return type.getDeclaredConstructor().newInstance();}catch(Exception e){throw new RuntimeException(e);}}}

@@ -1,0 +1,42 @@
+# Android 测试指南
+
+项目提供核心检查、Host 检查、Android 原生图形检查和完整模拟器检查。日常改动按所涉及模块选择检查，桌面手势与厂商系统行为在手机上手动验收。
+
+## 核心与 Host
+
+```powershell
+. ./Enter-Project.ps1
+python tools/check_core.py
+python tools/check_wallpaper_store.py
+python tools/check_content_host.py
+python tools/check_download_service_host.py
+python tools/check_motion_host.py
+```
+
+## Android 原生图形
+
+```powershell
+python tools/prepare_android_graphics_tests.py
+python tools/check_android_graphics.py dev.workshopvideo.PictureSettingsChecks dev.workshopvideo.SceneGraphicsChecks
+```
+
+Robolectric API 35 的原生图形检查覆盖实际颜色像素、图层、X-ray、设置控件和背景翻页。两个外部样本用例从 `WVB_WORKSHOP_DIR` 读取自行准备的工坊素材，未配置时跳过；样本不随源码分发。
+
+## 完整模拟器
+
+```powershell
+python tools/prepare_software_avd.py
+./tools/start_android_validation.ps1
+python tools/check_emulator.py --wait 900
+python tools/build_android.py
+python tools/build_device_checks.py
+python tools/check_emulator.py --run
+```
+
+软件模拟器使用 AOSP Android 11 / API 30、SwiftShader 和项目内 AVD。设备名 `emulator-5556`，ADB 端口 `5041`。检查脚本核对虚拟硬件，只在该模拟器执行自动交互。结果写入 `.cache/emulator-app-validation`，启动日志在 `.cache/emulator-validation`。
+
+设备测试使用生成的渐变视频验证真实纹理、画布、视频解码、壁纸服务与翻页。AOSP API 30 适合基础渲染回归；较新版本的独立桌面/锁屏接口及厂商启动器行为在相应手机验证。
+
+## 外部样本工具
+
+`tools/check_scene_corpus.py` 和 `tools/inspect_scene_corpus.py` 从 `WVB_WORKSHOP_DIR` 读取工坊目录。`tools/check_streaming_host.py` 使用 `WVB_TEST_VIDEO` 和 `WVB_TEST_MANIFEST` 指定对应视频及清单。样本、报告与日志保存在被忽略的缓存目录。

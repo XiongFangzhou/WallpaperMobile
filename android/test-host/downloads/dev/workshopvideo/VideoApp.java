@@ -1,0 +1,16 @@
+package dev.workshopvideo;
+import org.json.*;import java.io.*;import java.nio.file.*;import java.util.*;import java.util.concurrent.*;import java.util.concurrent.atomic.*;import dev.workshopvideo.core.*;
+public class VideoApp{
+ boolean allowNetwork=false,allowPublish=false;int published;
+ final Path root;public final ExecutorService work=Executors.newSingleThreadExecutor();public final Set<String> enqueued=ConcurrentHashMap.newKeySet();public final CompletableFuture<Void> filesReady=CompletableFuture.completedFuture(null);public boolean guest=false;public volatile CountDownLatch entered=new CountDownLatch(1),gate=new CountDownLatch(1);public AtomicInteger sessions=new AtomicInteger(),interrupted=new AtomicInteger();final Map<String,JSONObject> records=new LinkedHashMap<>();
+ VideoApp(Path root)throws Exception{this.root=root;Files.createDirectories(root);}
+ public synchronized JSONObject job(String id){JSONObject j=records.get(id);if(j==null)throw new IllegalArgumentException("missing job");return new JSONObject(j.toString());}
+ public synchronized void save(JSONObject record){records.put(record.optString("id"),new JSONObject(record.toString()));}
+ public synchronized void change(String id,String key,Object value){JSONObject j=job(id);put(j,key,value);save(j);}
+ public static void put(JSONObject o,String key,Object value){o.put(key,value);}public static String error(Throwable e){return e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();}
+ public void changed(){}public File getCacheDir(){return root.toFile();}public File getFilesDir(){return root.toFile();}public File partial(String id){return root.resolve(id+".partial").toFile();}public File transfer(String id){return root.resolve(id+"-parts").toFile();}public File video(String id){return root.resolve(id+".video").toFile();}public Object videoUri(String id){return "private:"+id;}
+ public SteamSession requireSession()throws Exception{if(allowNetwork)return null;sessions.incrementAndGet();entered.countDown();try{gate.await();}catch(InterruptedException e){interrupted.incrementAndGet();throw e;}throw new IOException("network fixture intentionally blocked");}
+ public void finishPrivateSave(JSONObject j)throws Exception{if(!allowPublish)throw new AssertionError("fixture must never publish incomplete video");String id=j.getString("id");if(transfer(id).exists())throw new AssertionError("original bundle must be removed before publication");VideoFiles.promote(partial(id),video(id),j.getLong("size"),VideoFiles.unhex(j.getString("sha1")));change(id,"state","saved");published++;}
+ public synchronized void discard(String id){if(enqueued.contains(id))throw new IllegalStateException("worker still queued");try{WorkshopAssets.clear(transfer(id));Files.deleteIfExists(partial(id).toPath());Files.deleteIfExists(video(id).toPath());records.remove(id);}catch(Exception e){throw new RuntimeException(e);}}
+ synchronized boolean has(String id){return records.containsKey(id);}void add(String id)throws Exception{save(new JSONObject().put("id",id).put("itemId","1").put("state","queued"));Files.write(partial(id).toPath(),new byte[]{1,2,3});Files.createDirectories(transfer(id).toPath());Files.write(transfer(id).toPath().resolve("cached.part"),new byte[]{4,5});}
+}

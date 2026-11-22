@@ -1,0 +1,1 @@
+package dev.workshopvideo;import java.io.File;final class WallpaperRenderer {static void verify(Object context,File file)throws Exception{try(WallpaperContent.Scene s=WallpaperContent.scene(file)){if(s.layers.isEmpty())throw new AssertionError("empty");}}}

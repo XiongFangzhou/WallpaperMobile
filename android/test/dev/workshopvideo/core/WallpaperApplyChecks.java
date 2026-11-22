@@ -1,0 +1,61 @@
+package dev.workshopvideo.core;
+import static dev.workshopvideo.core.CoreChecks.*;
+import static dev.workshopvideo.core.WallpaperApplyDecision.State.*;
+
+final class WallpaperApplyChecks {
+    static void run(){
+        check(WallpaperApplyDecision.needsPermission(true,true,NOT_SELECTED,false,false,false,false,false),"first denied MIUI direct entry automatically requests permission");
+        check(WallpaperApplyDecision.needsPermission(true,true,UNCONFIRMED,false,false,false,false,false),"replacing an already installed wallpaper also requests a revoked permission");
+        check(!WallpaperApplyDecision.needsPermission(true,true,NOT_SELECTED,false,false,false,true,false),"normal cancellation after preview binding does not request permission");
+        check(!WallpaperApplyDecision.needsPermission(true,false,NOT_SELECTED,false,false,false,false,false),"system chooser cancellation does not request the MIUI direct permission");
+        check(!WallpaperApplyDecision.needsPermission(false,true,NOT_SELECTED,false,false,false,false,false),"other vendors do not receive a MIUI permission request");
+        check(!WallpaperApplyDecision.needsPermission(true,true,FAILED,false,false,false,false,true),"codec failure does not request wallpaper permission");
+        check(!WallpaperApplyDecision.needsPermission(true,true,SELECTED,false,true,false,false,false),"actual system selection does not request permission");
+        check(!WallpaperApplyDecision.needsPermission(true,true,UNCONFIRMED,true,false,false,false,false),"successful picker receipt does not request permission");
+        check(!WallpaperApplyDecision.needsPermission(true,true,UNCONFIRMED,false,false,true,false,false),"an active candidate is not mistaken for permission denial");
+        check(WallpaperEntryRoute.isMiui("Xiaomi","Xiaomi"),"Xiaomi exposes the additional wallpaper permission flow");
+        check(WallpaperEntryRoute.select(true,false,true,false)==WallpaperEntryRoute.Route.DIRECT,"permission allowed uses the direct entry without a chooser");
+        check(WallpaperEntryRoute.select(true,true,true,false)==WallpaperEntryRoute.Route.CHOOSER,"an unavailable direct entry may fall back to public chooser");
+        check(WallpaperEntryRoute.select(true,false,false,false)==WallpaperEntryRoute.Route.DIRECT,"direct entry works without any system chooser");
+        check(WallpaperEntryRoute.select(true,true,true,true)==WallpaperEntryRoute.Route.NONE,"only failure of both entries denies video setting");
+        check(WallpaperEntryRoute.select(false,false,false,false)==WallpaperEntryRoute.Route.NONE,"absence of both entries denies video setting");
+        String file="d2377f56d71a44389d9de44549507c01.video";
+        var open=new WallpaperPickerHistory.Event(1795292699325L,"picker_open",file,"beforeMask=0 ids=27:28");
+        var returned=new WallpaperPickerHistory.Event(1795292700054L,"picker_return",file,"result=0 mask=0 ids=27:28 decision=NOT_SELECTED");
+        long now=1795292701000L;
+        check(WallpaperPickerHistory.immediateExit(java.util.List.of(open,returned),now,false)==29,"exact Xiaomi report blocks the failing entry on upgrade");
+        check(WallpaperPickerHistory.immediateExit(java.util.List.of(open,returned),now,true)==-1,"currently selected service overrides old failure");
+        var bound=new WallpaperPickerHistory.Event(1795292700060L,"preview_bound",file,"");
+        check(WallpaperPickerHistory.immediateExit(java.util.List.of(open,returned,bound),now,false)==-1,"late service bind prevents historical false positive");
+        var changed=new WallpaperPickerHistory.Event(returned.time(),returned.stage(),file,"result=0 mask=0 ids=29:30 decision=NOT_SELECTED");
+        check(WallpaperPickerHistory.immediateExit(java.util.List.of(open,changed),now,false)==-1,"changed wallpaper identity prevents historical rejection");
+        var laterOpen=new WallpaperPickerHistory.Event(now,"picker_open","new.video","beforeMask=0 ids=27:28");
+        check(WallpaperPickerHistory.immediateExit(java.util.List.of(open,returned,laterOpen),now,false)==-1,"unfinished latest attempt does not reuse an older failure");
+        check(WallpaperPickerHistory.immediateExit(java.util.List.of(open,returned),now+8L*86400000,false)==-1,"stale history does not block firmware entry");
+        var normalReturn=new WallpaperPickerHistory.Event(open.time()+4700,"picker_return",file,returned.detail());
+        check(WallpaperPickerHistory.immediateExit(java.util.List.of(open,normalReturn),now+10000,false)==-1,"normal cancellation does not trigger upgrade gating");
+        check(WallpaperPickerHistory.immediateExit(java.util.List.of(returned),now,false)==-1,"truncated history is inconclusive");
+        check(WallpaperApplyDecision.entryRejected(false,false,false,false,false,29),"reported 729 ms legacy return minus reconciliation is an immediate entry failure");
+        check(!WallpaperApplyDecision.entryRejected(false,false,false,false,false,4000),"normal user cancellation does not disable system entry");
+        check(!WallpaperApplyDecision.entryRejected(false,false,false,true,false,29),"a bound wallpaper is not an entry rejection");
+        check(!WallpaperApplyDecision.entryRejected(true,false,false,false,false,29),"actual selection defeats cancelled OEM return");
+        check(!WallpaperApplyDecision.entryRejected(false,true,false,false,false,29),"changed destinations do not block the system entry");
+        check(!WallpaperApplyDecision.entryRejected(false,false,true,false,false,29),"success without selection needs separate diagnosis");
+        check(!WallpaperApplyDecision.entryRejected(false,false,false,false,true,29),"media error is not an entry failure");
+        check(!WallpaperApplyDecision.entryRejected(false,false,false,false,false,-1),"unknown duration cannot block system entry");
+        check(WallpaperApplyDecision.entryRejected(false,false,false,false,false,250),"immediate exit boundary included");
+        check(!WallpaperApplyDecision.entryRejected(false,false,false,false,false,251),"longer exit is not treated as immediate rejection");
+        check(WallpaperApplyDecision.evaluate(false,false,false,false,false,false,false)==NOT_SELECTED,"cancelled first install is not a codec failure");
+        check(WallpaperApplyDecision.evaluate(false,false,true,false,false,false,false)==NOT_SELECTED,"picker success without selected component is not claimed applied");
+        check(WallpaperApplyDecision.evaluate(true,false,false,true,false,false,false)==SELECTED,"OEM cancelled return with actual new selected component is accepted");
+        check(WallpaperApplyDecision.evaluate(true,true,false,false,false,false,false)==UNCONFIRMED,"same component cancelled return must not overwrite old video");
+        check(WallpaperApplyDecision.evaluate(true,true,true,false,false,false,false)==SELECTED,"same component confirmed change can promote candidate");
+        check(WallpaperApplyDecision.evaluate(true,true,false,true,false,false,false)==SELECTED,"changed wallpaper identity confirms OEM selection");
+        check(WallpaperApplyDecision.evaluate(true,true,false,false,true,false,false)==SELECTED,"service-confirmed active candidate survives missing picker receipt");
+        check(WallpaperApplyDecision.evaluate(true,false,true,true,true,true,false)==RUNNING,"actual wallpaper frame and selection confirm running");
+        check(WallpaperApplyDecision.evaluate(true,true,false,false,true,true,false)==RUNNING,"actual active candidate frame confirms running without result OK");
+        check(WallpaperApplyDecision.evaluate(true,true,true,true,true,true,true)==FAILED,"renderer failure wins over stale successful frame");
+        check(WallpaperApplyDecision.evaluate(false,false,false,false,false,false,true)==FAILED,"preview failure classified separately from picker cancellation");
+        check(WallpaperApplyDecision.evaluate(true,true,false,false,false,true,false)==UNCONFIRMED,"unrelated frame does not turn ambiguous selection into success");
+    }
+}
