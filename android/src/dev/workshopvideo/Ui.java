@@ -19,7 +19,8 @@ public final class Ui {
         public Icon(String name,int color,int size){this.name=name;this.color=color;this.size=size;setBounds(0,0,size,size);}
         public int getIntrinsicWidth(){return size;}public int getIntrinsicHeight(){return size;}
         public void draw(Canvas canvas){canvas.save();canvas.translate(getBounds().left,getBounds().top);canvas.scale(getBounds().width()/24f,getBounds().height()/24f);paint.setColor(color);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(1.7f);paint.setStrokeCap(Paint.Cap.ROUND);paint.setStrokeJoin(Paint.Join.ROUND);Path p=new Path();
-            if(name.startsWith("heart")){p.moveTo(12,20);p.cubicTo(3,14,1,9,4,5.5f);p.cubicTo(7,2,10,4,12,6);p.cubicTo(14,4,17,2,20,5.5f);p.cubicTo(23,9,21,14,12,20);if(name.equals("heartFilled"))paint.setStyle(Paint.Style.FILL);canvas.drawPath(p,paint);}
+            if(name.equals("settings")){canvas.drawCircle(12,12,3.2f,paint);canvas.drawCircle(12,12,7.2f,paint);for(int i=0;i<8;i++){double a=i*Math.PI/4;canvas.drawLine(12+7.2f*(float)Math.cos(a),12+7.2f*(float)Math.sin(a),12+9.5f*(float)Math.cos(a),12+9.5f*(float)Math.sin(a),paint);}}
+            else if(name.startsWith("heart")){p.moveTo(12,20);p.cubicTo(3,14,1,9,4,5.5f);p.cubicTo(7,2,10,4,12,6);p.cubicTo(14,4,17,2,20,5.5f);p.cubicTo(23,9,21,14,12,20);if(name.equals("heartFilled"))paint.setStyle(Paint.Style.FILL);canvas.drawPath(p,paint);}
             else if(name.equals("account")){canvas.drawCircle(12,7,3.4f,paint);canvas.drawArc(new RectF(4,13,20,28),180,180,false,paint);}
             else if(name.equals("logout")){p.moveTo(10,4);p.lineTo(4,4);p.lineTo(4,20);p.lineTo(10,20);canvas.drawPath(p,paint);canvas.drawLine(10,12,21,12,paint);p.reset();p.moveTo(17,8);p.lineTo(21,12);p.lineTo(17,16);canvas.drawPath(p,paint);}
             else if(name.equals("info")){canvas.drawCircle(12,12,9,paint);canvas.drawCircle(12,7,0.7f,paint);canvas.drawLine(12,11,12,17,paint);}

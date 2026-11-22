@@ -1,0 +1,23 @@
+package dev.workshopvideo;
+
+import android.app.Activity;
+import android.content.res.ColorStateList;
+import android.widget.*;
+import android.view.Gravity;
+
+final class GeneralSettings {
+    private GeneralSettings(){}
+    static void show(Activity activity){
+        AppSheet sheet=new AppSheet(activity,"通用设置","对所有壁纸生效",null);
+        sheet.field(option(activity,"省电时保持静态画面","进入系统省电模式后暂停播放和体感，退出后自动恢复。",AppSettings.batteryStatic(activity),value->AppSettings.batteryStatic(activity,value)));
+        sheet.field(option(activity,"桌面滑动兼容","仅在桌面不提供翻页偏移时开启。通过较长的横滑估算翻页，无法判断桌面是否真正翻页。",AppSettings.gesturePaging(activity),value->AppSettings.gesturePaging(activity,value)));
+        sheet.footerButton("完成",true,()->sheet.dialog.dismiss());sheet.show();
+    }
+    private static LinearLayout option(Activity activity,String title,String detail,boolean enabled,java.util.function.Consumer<Boolean> changed){
+        float density=activity.getResources().getDisplayMetrics().density;int padding=Math.round(14*density);
+        LinearLayout card=new LinearLayout(activity);card.setOrientation(LinearLayout.VERTICAL);card.setPadding(padding,padding,padding,padding);card.setBackground(AppSheet.background(Ui.PANEL,padding));
+        Switch toggle=new Switch(activity);toggle.setText(title);toggle.setTextColor(Ui.TEXT);toggle.setTextSize(14);toggle.setGravity(Gravity.CENTER_VERTICAL);toggle.setMinHeight(Math.round(40*density));toggle.setChecked(enabled);
+        toggle.setThumbTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked},new int[]{}},new int[]{Ui.ACCENT,0xff81909f}));toggle.setTrackTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked},new int[]{}},new int[]{0xff355c51,0xff303d4b}));toggle.setOnCheckedChangeListener((view,on)->changed.accept(on));card.addView(toggle,new LinearLayout.LayoutParams(-1,-2));
+        TextView caption=new TextView(activity);caption.setText(detail);caption.setTextSize(12);caption.setTextColor(Ui.MUTED);caption.setPadding(0,Math.round(5*density),0,0);caption.setLineSpacing(Math.round(3*density),1);card.addView(caption,new LinearLayout.LayoutParams(-1,-2));return card;
+    }
+}

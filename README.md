@@ -17,7 +17,7 @@ WallpaperMobile 是一款原生 Android 应用，集工坊检索、资源下载�
 | 内置播放器 | 拖动进度、倍速、长按加速、双指缩放，左侧调亮度、右侧调音量，横滑快进快退 |
 | 视频壁纸 | 静音循环播放，可调整镜像、速度、亮度、对比度、饱和度、色相、背景色及画面对齐 |
 | 运动与交互 | 设备倾斜视差、桌面翻页跟随、图片图层参数，以及兼容场景的触摸 X-ray |
-| 桌面滚动 | 自动按画面比例分段，结合启动器报告的页数，也可自定义 1～12 页；拖动跟随、松手平滑收尾 |
+| 桌面滚动 | 跟随启动器实际翻页，自动或自定义 1～12 段；另提供桌面滑动兼容选项 |
 | 省电静态 | 可在系统省电模式下暂停为当前静态画面，退出省电后恢复播放与交互 |
 
 下载文件保存在应用私有目录，不进入手机相册。登录会话使用 Android Keystore 加密保存，应用不保存 Steam 密码。
@@ -31,9 +31,9 @@ WallpaperMobile 是一款原生 Android 应用，集工坊检索、资源下载�
 3. 在「已保存」查看下载进度和本地内容，点击视频打开播放器，点击管理进行批量清理。
 4. 长按已保存内容，选择「设为壁纸」，调整画面与交互设置，通过全屏预览确认效果后应用。
 
-视频壁纸的运动模式可选择关闭、设备倾斜或桌面滚动。画面对齐提供 铺满、拉伸和自由构图。省电静态开关也位于壁纸设置中。
+视频壁纸的运动模式可选择关闭、设备倾斜或桌面滚动。画面对齐提供 铺满、拉伸和自由构图。省电静态开关位于右上角菜单的「通用设置」，对所有壁纸生效。
 
-首次启用动态壁纸时，跟随系统页面完成设置。桌面与锁屏的可选范围随 Android 版本和手机系统而异。使用桌面滚动时，如果启动器没有报告页数，可手动调整背景分段，匹配自己的桌面布局。
+首次启用动态壁纸时，跟随系统页面完成设置。桌面与锁屏的可选范围随 Android 版本和手机系统而异。桌面滚动默认跟随系统实际偏移，取消翻页时背景也会回到原位。启动器没有报告页数时，可手动调整背景分段；如果完全不提供翻页偏移，可在「通用设置」启用「桌面滑动兼容」，用横滑距离估算翻页。兼容模式无法确认启动器是否真正翻页，默认关闭。
 
 ### 支持的内容
 
@@ -59,7 +59,7 @@ WallpaperMobile 是一款原生 Android 应用，集工坊检索、资源下载�
 
 脚本会准备 Android SDK / Build Tools、恢复锁定的依赖、运行核心检查，并构建签名 APK。首次执行需要下载工具和依赖，后续使用项目内缓存。
 
-生成的安装包位于 `dist/WallpaperMobile.apk` 和 `dist/WallpaperMobile-0.5.1.apk`。构建缓存、SDK、依赖和签名均保存在项目目录内。自行构建会使用自己的本地签名，后续更新请保留 `.tools/signing`。
+生成的安装包位于 `dist/WallpaperMobile.apk` 和 `dist/WallpaperMobile-0.5.2.apk`。构建缓存、SDK、依赖和签名均保存在项目目录内。自行构建会使用自己的本地签名，后续更新请保留 `.tools/signing`。
 
 也可以分步运行：
 
@@ -95,7 +95,7 @@ Android 原生图形检查：
 ```powershell
 python tools/prepare_android_graphics_tests.py
 python tools/build_android.py --compile-only
-python tools/check_android_graphics.py dev.workshopvideo.SettingsUiChecks dev.workshopvideo.PreviewLifecycleChecks dev.workshopvideo.PictureSettingsChecks dev.workshopvideo.SceneGraphicsChecks
+python tools/check_android_graphics.py dev.workshopvideo.GeneralAndMotionChecks dev.workshopvideo.SceneCompositionChecks dev.workshopvideo.SettingsUiChecks dev.workshopvideo.PreviewLifecycleChecks dev.workshopvideo.PictureSettingsChecks dev.workshopvideo.SceneGraphicsChecks
 ```
 
 外部工坊样本为可选测试输入，通过 `WVB_WORKSHOP_DIR` 配置；未配置时跳过对应样本用例。其余图形用例使用生成的测试素材。完整 Android 模拟器流程见 [Android 测试指南](docs/android-local-testing.md)。

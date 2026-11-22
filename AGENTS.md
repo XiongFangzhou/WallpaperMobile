@@ -21,8 +21,8 @@
 - Run relevant core, host, native graphics or shader checks. Distinguish these checks from a running Android system when reporting validation.
 - Phone interaction is manual. USB operations are limited to selected installation and read-only diagnostics. Do not run input or wallpaper-changing automation on physical devices.
 - Full emulator checks are available when requested. Restrict emulator commands to their designated virtual device.
-- Use launcher offsets/page metadata when available, with aspect-based segmentation and configurable gesture fallback otherwise. Preserve full-image scrolling and smooth motion.
-- In configured battery saver mode, retain a visible frame and suspend playback, animation and sensor sampling. Resume according to visibility and saved options.
+- Use launcher offsets/page metadata when available, with aspect-based segmentation and an explicit, default-off gesture compatibility option otherwise. Never infer committed launcher pages from swipe velocity. Preserve full-image scrolling and smooth motion.
+- Keep battery saver policy global, outside per-wallpaper visual options. In configured battery saver mode, retain a visible frame and suspend playback, animation and sensor sampling. Resume according to visibility and saved options.
 
 ## Release
 
