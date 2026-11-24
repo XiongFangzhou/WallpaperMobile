@@ -48,7 +48,7 @@ public final class VideoPlayerActivity extends Activity implements TextureView.S
     private final Runnable hideHud=()->hud.setVisibility(View.GONE);
     private final Runnable holdAction=()->{
         try{if(foreground&&ready&&gestureMode==TAP&&pointerCount==1&&player!=null&&player.isPlaying()) {
-            gestureMode=HOLD;cancelTap();settings.hold(true);applySpeed();if(settings.holding()){setControls(false);main.removeCallbacks(hideHud);hud.setVisibility(View.GONE);}
+            gestureMode=HOLD;cancelTap();settings.hold(true);applySpeed();if(settings.holding()){setControls(false);hint(speedText(settings.speed())+" 快进中",false);}
         }}catch(IllegalStateException e){playbackError();}
     };
     private final Runnable tick=new Runnable(){public void run(){
@@ -114,14 +114,14 @@ public final class VideoPlayerActivity extends Activity implements TextureView.S
         rotate.setOnLongClickListener(v->{setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR);hint("已启用自动旋转",true);return true;});
         actions.addView(rotate,new LinearLayout.LayoutParams(dp(48),dp(48)));bottom.addView(actions);
         root.addView(bottom,new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM));
-        hud=label("",16);hud.setGravity(Gravity.CENTER);hud.setPadding(dp(22),dp(13),dp(22),dp(13));
-        GradientDrawable panel=new GradientDrawable();panel.setColor(0xc51b2027);panel.setCornerRadius(dp(12));hud.setBackground(panel);hud.setVisibility(View.GONE);
-        root.addView(hud,new FrameLayout.LayoutParams(-2,-2,Gravity.CENTER));
+        hud=label("",14);hud.setGravity(Gravity.CENTER);hud.setSingleLine(true);hud.setPadding(dp(16),dp(8),dp(16),dp(8));
+        GradientDrawable panel=new GradientDrawable();panel.setColor(0xb3101418);panel.setCornerRadius(dp(18));hud.setBackground(panel);hud.setVisibility(View.GONE);
+        FrameLayout.LayoutParams hudLayout=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.CENTER_HORIZONTAL);hudLayout.topMargin=dp(64);root.addView(hud,hudLayout);
         root.setOnApplyWindowInsetsListener((v,insets)->{
             int left=0,right=0,above=0,below=0;
             if(Build.VERSION.SDK_INT>=30){android.graphics.Insets safe=insets.getInsets(WindowInsets.Type.displayCutout()|WindowInsets.Type.systemGestures());left=safe.left;right=safe.right;above=safe.top;below=safe.bottom;}
             else {DisplayCutout cutout=insets.getDisplayCutout();if(cutout!=null){left=cutout.getSafeInsetLeft();right=cutout.getSafeInsetRight();above=cutout.getSafeInsetTop();}below=insets.getSystemWindowInsetBottom();}
-            top.setPadding(left+dp(4),above+dp(4),right+dp(12),dp(24));
+            top.setPadding(left+dp(4),above+dp(4),right+dp(12),dp(24));((FrameLayout.LayoutParams)hud.getLayoutParams()).topMargin=above+dp(64);hud.requestLayout();
             bottom.setPadding(left+dp(6),0,right+dp(6),below+dp(6));return insets;
         });
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
@@ -234,9 +234,9 @@ public final class VideoPlayerActivity extends Activity implements TextureView.S
     private void chooseSpeed(){
         main.removeCallbacks(hideControls);cancelHold();float[] values={.5f,.75f,1f,1.25f,1.5f,1.75f,2f,3f};String[] labels=new String[values.length];int selected=2;
         for(int i=0;i<values.length;i++){labels[i]=speedText(values[i]);if(Math.abs(values[i]-settings.selectedSpeed())<.001)selected=i;}
-        new AlertDialog.Builder(this).setTitle("播放速度").setSingleChoiceItems(labels,selected,(dialog,index)->{
-            settings.setSpeed(values[index]);getSharedPreferences("player",MODE_PRIVATE).edit().putFloat("speed",settings.selectedSpeed()).apply();applySpeed();dialog.dismiss();scheduleHide();
-        }).setOnDismissListener(d->scheduleHide()).setNegativeButton("取消",null).show();
+        AppSheet sheet=new AppSheet(this,"播放速度",null,null);Ui.Flow options=new Ui.Flow(this,dp(8));
+        for(int i=0;i<values.length;i++){int index=i;TextView chip=Ui.chip(this,labels[i],i==selected,()->{settings.setSpeed(values[index]);getSharedPreferences("player",MODE_PRIVATE).edit().putFloat("speed",settings.selectedSpeed()).apply();applySpeed();sheet.dialog.dismiss();});chip.setMinWidth(dp(68));options.addView(chip,new ViewGroup.LayoutParams(-2,dp(40)));}
+        sheet.field(options);sheet.dialog.setOnDismissListener(d->{scheduleHide();immersive();});sheet.show();
     }
     private void applySpeed(){
         if(speed!=null)speed.setText(speedText(settings.speed()));if(!ready||player==null)return;
@@ -249,9 +249,9 @@ public final class VideoPlayerActivity extends Activity implements TextureView.S
     private void updateProgress(int value){if(clock==null)return;clock.setText(PlayerControls.time(value)+" / "+PlayerControls.time(duration));if(!seeking)seek.setProgress(PlayerControls.seekProgress(value,duration,seek.getMax()));}
     private void setControls(boolean visible){if(top==null)return;top.setVisibility(visible?View.VISIBLE:View.GONE);bottom.setVisibility(visible?View.VISIBLE:View.GONE);}
     private void scheduleHide(){main.removeCallbacks(hideControls);if(foreground&&playWanted&&!seeking)main.postDelayed(hideControls,2000);}
-    private void hint(String text,boolean temporary){if(hud==null)return;main.removeCallbacks(hideHud);hud.setText(text);hud.setVisibility(View.VISIBLE);if(temporary)main.postDelayed(hideHud,850);}
+    private void hint(String text,boolean temporary){if(hud==null)return;main.removeCallbacks(hideHud);hud.setText(text.replace("\n","  ·  "));hud.setVisibility(View.VISIBLE);if(temporary)main.postDelayed(hideHud,850);}
     private void cancelTap(){if(taps!=null){long now=SystemClock.uptimeMillis();MotionEvent cancel=MotionEvent.obtain(now,now,MotionEvent.ACTION_CANCEL,0,0,0);taps.onTouchEvent(cancel);cancel.recycle();}}
-    private void cancelHold(){main.removeCallbacks(holdAction);if(settings.holding()){settings.hold(false);applySpeed();}}
+    private void cancelHold(){main.removeCallbacks(holdAction);if(settings.holding()){settings.hold(false);applySpeed();main.removeCallbacks(hideHud);hud.setVisibility(View.GONE);}}
     private float brightness(){
         float value=getWindow().getAttributes().screenBrightness;if(value>=0)return PlayerControls.brightness(value,0);
         int maximum=255;

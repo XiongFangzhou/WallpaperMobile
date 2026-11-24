@@ -3,6 +3,8 @@ package dev.workshopvideo.core;
 import in.dragonbra.javasteam.enums.EResult;
 import in.dragonbra.javasteam.networking.steam3.ProtocolTypes;
 import in.dragonbra.javasteam.rpc.service.PublishedFile;
+import in.dragonbra.javasteam.rpc.service.Player;
+import in.dragonbra.javasteam.protobufs.steamclient.SteammessagesPlayerSteamclient.CPlayer_GetPlayerLinkDetails_Request;
 import in.dragonbra.javasteam.steam.authentication.*;
 import in.dragonbra.javasteam.steam.handlers.steamuser.LogOnDetails;
 import in.dragonbra.javasteam.steam.handlers.steamuser.SteamUser;
@@ -38,6 +40,8 @@ public final class SteamSession implements AutoCloseable {
     public final SteamClient client;
     public final SteamUnifiedMessages unified;
     public final PublishedFile published;
+    private final SteamCommunity community;
+    private final Player player;
     private final SteamUser user;
     private String savedUsername, savedToken;
     private boolean anonymousSession=false;
@@ -68,6 +72,9 @@ public final class SteamSession implements AutoCloseable {
         user = client.getHandler(SteamUser.class);
         unified = client.getHandler(SteamUnifiedMessages.class);
         published = unified.createService(PublishedFile.class);
+        community = unified.createService(SteamCommunity.class);
+        community.client = client;
+        player = unified.createService(Player.class);
         CallbackManager callbacks = new CallbackManager(client);
         subscriptions.add(callbacks.subscribe(ConnectedCallback.class, c -> connected.complete(null)));
         subscriptions.add(callbacks.subscribe(DisconnectedCallback.class, c -> {
@@ -181,6 +188,50 @@ public final class SteamSession implements AutoCloseable {
         if(response.getResult()!=EResult.OK)
             throw new IllegalStateException("Steam 查询失败："+response.getResult());
         return response.getBody().build();
+    }
+
+    /** Casts the signed-in user's thumbs-up or thumbs-down on a workshop item. */
+    public void vote(long itemId,boolean up) throws Exception {
+        ensureAuthenticated();
+        var response=await(published.vote(CPublishedFile_Vote_Request.newBuilder().setPublishedfileid(itemId).setVoteUp(up).build()));
+        if(response.getResult()!=EResult.OK)throw new IllegalStateException("Steam 未接受评价："+response.getResult());
+    }
+
+    /** The signed-in user's existing vote: TRUE up, FALSE down, null none. */
+    public Boolean myVote(long itemId) throws Exception {
+        ensureAuthenticated();
+        var response=await(published.getUserVoteSummary(CPublishedFile_GetUserVoteSummary_Request.newBuilder().addPublishedfileids(itemId).build()));
+        if(response.getResult()!=EResult.OK)throw new IllegalStateException("无法读取你的评价："+response.getResult());
+        for(var summary:response.getBody().getSummariesList())if(summary.getPublishedfileid()==itemId)return summary.getVoteFor()?Boolean.TRUE:summary.getVoteAgainst()?Boolean.FALSE:null;
+        return null;
+    }
+
+    /** One page of a workshop item's public comments, newest first. */
+    public WorkshopComments.Page comments(long creator,long itemId,int start,int count) throws Exception {
+        Exception direct;
+        try{ensureAuthenticated();return WorkshopComments.parse(community.call(WorkshopComments.METHOD,WorkshopComments.request(creator,itemId,start,count),15),start);}
+        catch(Exception e){direct=e;}
+        // Steam does not answer every account's Community calls over the client connection; the public web thread is the fallback.
+        try{
+            okhttp3.FormBody form=new okhttp3.FormBody.Builder().add("start",Integer.toString(start)).add("count",Integer.toString(count)).add("feature2","-1").build();
+            okhttp3.Request request=new okhttp3.Request.Builder().url(WorkshopComments.webUrl(creator,itemId)).post(form).header("Accept","application/json").build();
+            try(okhttp3.Response response=client.getConfiguration().getHttpClient().newCall(request).execute()){
+                if(!response.isSuccessful())throw new IllegalStateException("HTTP "+response.code());
+                return WorkshopComments.parseWeb(response.body().string(),start);
+            }
+        }catch(Exception web){
+            throw new IllegalStateException("Steam 连接："+messageOf(direct)+"；Steam 社区："+messageOf(web));
+        }
+    }
+    private static String messageOf(Exception e){String m=e.getMessage();return m==null||m.isBlank()?e.getClass().getSimpleName():m;}
+
+    /** Public persona names for comment authors; unknown accounts are left out. */
+    public java.util.Map<Long,String> personaNames(java.util.Collection<Long> steamIds) throws Exception {
+        ensureAuthenticated();java.util.Map<Long,String> names=new java.util.HashMap<>();if(steamIds.isEmpty())return names;
+        var response=await(player.getPlayerLinkDetails(CPlayer_GetPlayerLinkDetails_Request.newBuilder().addAllSteamids(steamIds).build()));
+        if(response.getResult()!=EResult.OK)return names;
+        for(var account:response.getBody().getAccountsList())if(account.hasPublicData())names.put(account.getPublicData().getSteamid(),account.getPublicData().getPersonaName());
+        return names;
     }
 
     public PublishedFileDetails details(long itemId) throws Exception {

@@ -81,7 +81,7 @@ public final class SavedLibraryView extends LinearLayout {
             next.add(record);used+=record.optLong("size");if(!record.optString("migrationError").isEmpty())failedMigrations++;
             signature.append(record.optString("id")).append(record.optString("title")).append(record.optString("previewUrl")).append(record.optString("uri")).append(record.optString("migrationError"));
         }
-        summary.setText(next.size()+" 项，占用 "+(used>0?Ui.size(used):"0 B")+" · 长按可设为壁纸或删除");
+        summary.setText(next.size()+" 项 · "+(used>0?Ui.size(used):"0 B"));
         migration.setText(failedMigrations+" 个旧视频还在相册中，点此重新迁移到应用内");migration.setVisibility(failedMigrations>0?VISIBLE:GONE);
         refreshTransfers();
         signature.append(app.favorites().toString());String updated=signature.toString();
@@ -97,12 +97,12 @@ public final class SavedLibraryView extends LinearLayout {
         selectAll.setText(!videos.isEmpty()&&selected.size()==videos.size()?"取消全选":"全选");Ui.enable(selectAll,!cleaning&&!videos.isEmpty());
     }
     private void videoMenu(JSONObject video){
-        String itemId=video.optString("itemId");AppSheet sheet=new AppSheet(activity,video.optString("title"),"已保存在应用内",video.optString("previewUrl"));
-        sheet.action("heart",app.isFavorite(itemId)?"取消收藏":"收藏","收藏独立于下载",false,()->{try{JSONObject metadata=new JSONObject(video.toString());VideoApp.put(metadata,"video",video.optString("kind","video").equals("video"));app.toggleFavorite(metadata);refresh();}catch(Exception e){toast(VideoApp.error(e));}});
+        String itemId=video.optString("itemId");AppSheet sheet=new AppSheet(activity,video.optString("title"),null,video.optString("previewUrl"));
+        sheet.action("heart",app.isFavorite(itemId)?"取消收藏":"收藏","",false,()->{try{JSONObject metadata=new JSONObject(video.toString());VideoApp.put(metadata,"video",video.optString("kind","video").equals("video"));app.toggleFavorite(metadata);refresh();}catch(Exception e){toast(VideoApp.error(e));}});
         String report=video.optString("adaptationReport");
-        if(!report.isEmpty())sheet.action("info","查看转换说明","哪些图层和特效被保留",false,()->{AppSheet notes=new AppSheet(activity,"转换说明",video.optString("title"),null);TextView body=text(report,13,MUTED);body.setLineSpacing(dp(4),1);body.setTextIsSelectable(true);notes.field(body);notes.footerButton("知道了",true,()->notes.dialog.dismiss());notes.show();});
-        sheet.action("trash","删除内容","收藏和正在使用的壁纸副本会保留",true,()->confirmDelete(java.util.List.of(video.optString("id"))));
-        if(video.optBoolean("officialPackage")){sheet.action("download","重新下载为主线壁纸","保留原包直到成功",false,()->SceneAdaptation.open(activity,app,video));sheet.detail("Hydrogen 官方 MPKG，需主线适配后设置");sheet.show();return;}sheet.detail("正在准备…");sheet.show();app.eligibility.check(video,result->{if(closed||!sheet.showing())return;sheet.detail(result.video()?(video.optString("kind").equals("scene")?"场景已通过画面检查，可调整图层与交互":"可设置动态壁纸或静态画面"):result.still()?"不允许设置视频壁纸\n"+result.reason():"本机无法将此内容设为壁纸\n"+result.reason());if(result.video()||result.still()&&!video.optString("kind").equals("scene"))sheet.action("wallpaper",result.video()?"设为壁纸":"设为静态壁纸",result.video()?"调整运动、交互与画面效果":"从视频中自由选择画面",false,()->activity.startActivity(new android.content.Intent(activity,WallpaperSetupActivity.class).putExtra("id",video.optString("id"))));});
+        if(!report.isEmpty())sheet.action("info","查看转换说明","",false,()->{AppSheet notes=new AppSheet(activity,"转换说明",video.optString("title"),null);TextView body=text(report,13,MUTED);body.setLineSpacing(dp(4),1);body.setTextIsSelectable(true);notes.field(body);notes.footerButton("知道了",true,()->notes.dialog.dismiss());notes.show();});
+        sheet.action("trash","删除内容","",true,()->confirmDelete(java.util.List.of(video.optString("id"))));
+        if(video.optBoolean("officialPackage")){sheet.action("download","重新下载为主线壁纸","",false,()->SceneAdaptation.open(activity,app,video));sheet.detail("Hydrogen 官方 MPKG，需主线适配后设置");sheet.show();return;}sheet.detail("正在准备…");sheet.show();app.eligibility.check(video,result->{if(closed||!sheet.showing())return;sheet.detail(result.video()?(video.optString("kind").equals("scene")?"场景已通过画面检查，可调整图层与交互":"可设置动态壁纸或静态画面"):result.still()?"不允许设置视频壁纸\n"+result.reason():"本机无法将此内容设为壁纸\n"+result.reason());if(result.video()||result.still()&&!video.optString("kind").equals("scene"))sheet.action("wallpaper",result.video()?"设为壁纸":"设为静态壁纸",result.video()?"调整运动、交互与画面效果":"从视频中自由选择画面",false,()->activity.startActivity(new android.content.Intent(activity,WallpaperSetupActivity.class).putExtra("id",video.optString("id"))));});
     }
     private void refreshTransfers(){
         int scroll=transfers.getScrollY();transferCards.removeAllViews();int count=0;List<JSONObject> jobs=app.jobs();Collections.reverse(jobs);

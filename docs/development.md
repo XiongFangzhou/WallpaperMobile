@@ -18,7 +18,7 @@
 
 脚本会准备 Android SDK / Build Tools、恢复锁定的依赖、运行核心检查，并构建签名 APK。首次执行需要下载工具和依赖，后续使用项目内缓存。
 
-生成的安装包位于 `dist/WallpaperMobile.apk` 和 `dist/WallpaperMobile-0.5.10.apk`。构建缓存、SDK、依赖和签名均保存在项目目录内。自行构建会使用自己的本地签名，后续更新请保留 `.tools/signing`。
+生成的安装包位于 `dist/WallpaperMobile.apk` 和 `dist/WallpaperMobile-0.5.12.apk`。构建缓存、SDK、依赖和签名均保存在项目目录内。自行构建会使用自己的本地签名，后续更新请保留 `.tools/signing`。
 
 也可以分步运行：
 

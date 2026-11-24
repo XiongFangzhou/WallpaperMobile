@@ -11,6 +11,8 @@ final class EffectOptions {
         if(source.has("xray"))VideoApp.put(out,"xray",source.optBoolean("xray",true));if(source.has("xraySize"))VideoApp.put(out,"xraySize",EffectMotion.clamp((float)source.optDouble("xraySize",.3),.01f,1));
         VideoApp.put(out,"flip",source.optBoolean("flip"));VideoApp.put(out,"showColorOptions",source.optBoolean("showColorOptions",true));VideoApp.put(out,"pageMode",source.optString("pageMode").equals("manual")?"manual":"auto");
         String motion=source.optString("motionMode",source.optBoolean("pan")?"scroll":source.optBoolean("gyro")?"device":"disabled");if(!java.util.List.of("disabled","device","scroll").contains(motion))motion="disabled";VideoApp.put(out,"motionMode",motion);
+        // Author switches chosen on the phone (scene properties), kept verbatim but bounded.
+        int kept=0;for(java.util.Iterator<String> keys=source.keys();keys.hasNext()&&kept<64;){String key=keys.next();if(!key.startsWith("user.")||key.length()>96)continue;Object v=source.opt(key);if(v instanceof Boolean||v instanceof String&&((String)v).length()<=64){VideoApp.put(out,key,v);kept++;}}
         String alignment=source.optString("alignment","cover");VideoApp.put(out,"alignment",java.util.List.of("cover","fill","free").contains(alignment)?alignment:"cover");
         VideoApp.put(out,"backgroundColor",source.optString("backgroundColor","#000000").matches("#[0-9a-fA-F]{6}")?source.optString("backgroundColor","#000000"):"#000000");
         VideoApp.put(out,"contrast",EffectMotion.clamp((float)source.optDouble("contrast",1),0,2));VideoApp.put(out,"hue",EffectMotion.clamp((float)source.optDouble("hue",0),-180,180));

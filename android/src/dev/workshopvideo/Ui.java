@@ -141,6 +141,22 @@ public final class Ui {
     public static String size(long bytes){int power=Math.max(0,Math.min(3,(int)(Math.log(Math.max(1,bytes))/Math.log(1024))));double value=bytes/Math.pow(1024,power);return String.format(Locale.CHINA,power>1&&value<10?"%.1f %s":"%.0f %s",value,new String[]{"B","KB","MB","GB"}[power]);}
     public static String date(int seconds){return new java.text.SimpleDateFormat("yyyy-MM-dd",Locale.CHINA).format(new Date(Integer.toUnsignedLong(seconds)*1000));}
 
+    /** Five stars filled to {@code value} out of 5, so 4.6 shows the last star 60% full. */
+    public static final class Stars extends Drawable {
+        private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);private final float value;private final int size;
+        public Stars(float value,int size){this.value=Math.max(0,Math.min(5,value));this.size=size;setBounds(0,0,getIntrinsicWidth(),size);}
+        public int getIntrinsicWidth(){return size*5+size/5*4;}public int getIntrinsicHeight(){return size;}
+        public void draw(Canvas canvas){
+            Rect b=getBounds();int gap=size/5;Path star=new Path();
+            for(int i=0;i<10;i++){double a=-Math.PI/2+i*Math.PI/5;float r=i%2==0?size/2f:size/4.6f;float x=size/2f+r*(float)Math.cos(a),y=size*.53f+r*(float)Math.sin(a);if(i==0)star.moveTo(x,y);else star.lineTo(x,y);}star.close();
+            for(int i=0;i<5;i++){
+                canvas.save();canvas.translate(b.left+i*(size+gap),b.top);paint.setColor(0x40ffffff);canvas.drawPath(star,paint);
+                float fill=Math.max(0,Math.min(1,value-i));if(fill>0){canvas.clipRect(0,0,size*fill,size);paint.setColor(0xffffc857);canvas.drawPath(star,paint);}
+                canvas.restore();
+            }
+        }
+        public void setAlpha(int alpha){paint.setAlpha(alpha);}public void setColorFilter(ColorFilter filter){paint.setColorFilter(filter);}public int getOpacity(){return PixelFormat.TRANSLUCENT;}
+    }
     public static final class Icon extends Drawable {
         private final String name;private final Paint paint=new Paint(3);private final int size;private int color;
         public Icon(String name,int color,int size){this.name=name;this.color=color;this.size=size;setBounds(0,0,size,size);}
@@ -165,6 +181,9 @@ public final class Ui {
             else if(name.equals("next")){p.moveTo(9,5);p.lineTo(16,12);p.lineTo(9,19);canvas.drawPath(p,paint);}
             else if(name.equals("fit")){p.moveTo(4,9);p.lineTo(4,4);p.lineTo(9,4);p.moveTo(15,4);p.lineTo(20,4);p.lineTo(20,9);p.moveTo(20,15);p.lineTo(20,20);p.lineTo(15,20);p.moveTo(9,20);p.lineTo(4,20);p.lineTo(4,15);canvas.drawPath(p,paint);}
             else if(name.equals("rotate")){canvas.drawRoundRect(8,3,16,21,2,2,paint);canvas.drawArc(new RectF(2,6,22,18),200,60,false,paint);canvas.drawArc(new RectF(2,6,22,18),20,60,false,paint);}
+            else if(name.startsWith("thumb")){boolean down=name.equals("thumbDown")||name.equals("thumbDownFilled");canvas.save();if(down)canvas.rotate(180,12,12);
+                p.moveTo(7,10);p.lineTo(10.5f,3.5f);p.quadTo(13.5f,3.5f,13,7);p.lineTo(12.5f,10);p.lineTo(18.5f,10);p.quadTo(21,10,20.5f,12.5f);p.lineTo(19,19);p.quadTo(18.5f,21,16.5f,21);p.lineTo(7,21);p.close();
+                if(name.endsWith("Filled"))paint.setStyle(Paint.Style.FILL);canvas.drawPath(p,paint);paint.setStyle(Paint.Style.STROKE);canvas.drawRoundRect(3,10,7,21,1,1,paint);canvas.restore();}
             else if(name.equals("pause")){canvas.drawLine(9,5,9,19,paint);canvas.drawLine(15,5,15,19,paint);}
             else if(name.equals("refresh")){canvas.drawArc(new RectF(4.5f,4.5f,19.5f,19.5f),-60,290,false,paint);p.moveTo(19.5f,3.5f);p.lineTo(19.5f,8.5f);p.lineTo(14.5f,8.5f);canvas.drawPath(p,paint);}
             else if(name.equals("copy")){canvas.drawRoundRect(8,8,20,20,2.5f,2.5f,paint);p.moveTo(16,5);p.lineTo(16,4);p.lineTo(6,4);p.quadTo(4,4,4,6);p.lineTo(4,16);canvas.drawPath(p,paint);}

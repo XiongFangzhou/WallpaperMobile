@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import zipfile
 from check_apk import check_apk
+import bundle_shader_translator
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ANDROID = ROOT / 'android'
@@ -33,6 +34,7 @@ def main():
     parser.add_argument('--compile-only', action='store_true')
     args = parser.parse_args()
     BUILD.mkdir(parents=True, exist_ok=True)
+    bundle_shader_translator.main()  # Packaged as an asset; regenerated from third_party/we-scene.
     (ROOT / '.cache' / 'tmp').mkdir(parents=True, exist_ok=True)
     os.environ['TEMP'] = str(ROOT / '.cache' / 'tmp')
     os.environ['TMP'] = os.environ['TEMP']
@@ -59,7 +61,7 @@ def main():
     extra = ['--extra-packages', ':'.join(extra_packages)] if extra_packages else []
     run([TOOLS / 'aapt2.exe', 'link', '--manifest', ANDROID / 'AndroidManifest.xml',
          '-I', PLATFORM, '--java', generated, '--min-sdk-version', '29', '--target-sdk-version', '35',
-         '--version-code', '40', '--version-name', '0.5.10', BUILD / 'resources.zip',
+         '--version-code', '52', '--version-name', '0.5.22', BUILD / 'resources.zip',
          '--auto-add-overlay', *overlays, *extra,
          '-A', ANDROID / 'assets', '-o', BUILD / 'resources.ap_'])
     source_paths = sorted((ANDROID / 'src').rglob('*.java')) + list(generated.rglob('*.java'))
@@ -136,7 +138,7 @@ def main():
     digest = hashlib.sha256(apk.read_bytes()).hexdigest()
     (DIST / 'WallpaperMobile.apk.sha256').write_text(digest + '  WallpaperMobile.apk\n', encoding='ascii')
     # Give the user an unambiguous filename to distinguish the repaired APK.
-    versioned = DIST / 'WallpaperMobile-0.5.10.apk'
+    versioned = DIST / 'WallpaperMobile-0.5.22.apk'
     versioned.write_bytes(apk.read_bytes())
     versioned.with_suffix('.apk.sha256').write_text(digest + '  ' + versioned.name + '\n', encoding='ascii')
     print('APK:', apk, 'bytes:', apk.stat().st_size, 'SHA256:', digest, flush=True)

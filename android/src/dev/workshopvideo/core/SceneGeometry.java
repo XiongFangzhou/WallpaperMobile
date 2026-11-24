@@ -14,4 +14,12 @@ public final class SceneGeometry {
             (float)(bc*c-bs*s)*w*kx,-(float)(bs*c+bc*s)*w*ky,
             (float)(-bc*s-bs*c)*h*kx,-(float)(-bs*s+bc*c)*h*ky);
     }
+    /** Screen position (0..1, y down) to scene coordinates (pixels, y up as Wallpaper Engine scripts see them); inverse of {@link #pose}. */
+    public static float[] sceneFromScreen(CanvasCamera.Frame camera,int iw,int ih,float screenX,float screenY){
+        double b=Math.toRadians(camera.angle()),bc=Math.cos(b),bs=Math.sin(b);
+        float kx=2*camera.scaleX()/iw,ky=2*camera.scaleY()/ih;
+        double u=(2*screenX-1-camera.x())/kx,v=(camera.y()-(1-2*screenY))/ky;
+        double px=bc*u+bs*v,py=-bs*u+bc*v;
+        return new float[]{(float)(px+iw/2.0),(float)(ih-(py+ih/2.0))};
+    }
 }

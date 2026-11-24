@@ -9,16 +9,16 @@ final class GeneralSettings {
     private GeneralSettings(){}
     static void show(Activity activity){
         AppSheet sheet=new AppSheet(activity,"通用设置","对所有壁纸生效",null);
-        sheet.field(option(activity,"省电时保持静态画面","手机开启省电模式时，壁纸停在当前画面，暂停播放和体感；关闭省电后自动恢复。",AppSettings.batteryStatic(activity),value->AppSettings.batteryStatic(activity,value)));
-        sheet.field(option(activity,"桌面滑动兼容","有些桌面不会告诉壁纸翻到了哪一页。开启后根据你的滑动推算位置；桌面能提供真实位置时始终以桌面为准。",AppSettings.gesturePaging(activity),value->AppSettings.gesturePaging(activity,value)));
+        sheet.field(option(activity,"省电时保持静态画面","省电模式下暂停动画和体感",AppSettings.batteryStatic(activity),value->AppSettings.batteryStatic(activity,value)));
+        sheet.field(option(activity,"桌面滑动兼容","桌面不报告翻页位置时，按滑动推算",AppSettings.gesturePaging(activity),value->AppSettings.gesturePaging(activity,value)));
         sheet.action("settings","精确桌面同步",LauncherSync.status(AppSettings.launcherSync(activity)),false,()->launcherSync(activity));
         sheet.footerButton("完成",true,()->sheet.dialog.dismiss());sheet.show();
     }
     private static void launcherSync(Activity activity){
         AppSheet sheet=new AppSheet(activity,"精确桌面同步",LauncherSync.status(AppSettings.launcherSync(activity)),null);
-        sheet.field(option(activity,"辅助事件同步",LauncherSync.nativeObserved()?"系统已直接提供翻页位置，无需额外授权。此开关只影响辅助服务，不影响系统同步。":"在系统「无障碍」中开启「WallpaperMobile 精确桌面同步」后，壁纸会读取桌面的真实翻页位置。只读取滚动位置，不读取屏幕内容，也不会操作手机。",AppSettings.launcherSync(activity),value->AppSettings.launcherSync(activity,value)));
-        if(!AppSettings.gesturePaging(activity)&&!LauncherSync.observed()&&!LauncherSync.nativeObserved())sheet.action("settings","启用手势兼容","桌面还没有提供位置时，先按滑动手势跟随",false,()->{AppSettings.gesturePaging(activity,true);show(activity);});
-        sheet.action("settings",LauncherSync.connected()?"管理系统授权":"前往系统开启",LauncherSync.connected()?"服务已开启；如果桌面不提供数据，可继续使用滑动推算":"在列表中找到「WallpaperMobile 精确桌面同步」并开启",false,()->LauncherScrollService.settings(activity));
+        sheet.field(option(activity,"辅助事件同步",LauncherSync.nativeObserved()?"系统已提供翻页位置，无需授权":"需在系统「无障碍」中开启，只读取桌面滚动位置",AppSettings.launcherSync(activity),value->AppSettings.launcherSync(activity,value)));
+        if(!AppSettings.gesturePaging(activity)&&!LauncherSync.observed()&&!LauncherSync.nativeObserved())sheet.action("settings","启用手势兼容","",false,()->{AppSettings.gesturePaging(activity,true);show(activity);});
+        sheet.action("settings",LauncherSync.connected()?"管理系统授权":"前往系统开启","",false,()->LauncherScrollService.settings(activity));
         sheet.footerButton("完成",true,()->sheet.dialog.dismiss());sheet.show();
     }
     private static LinearLayout option(Activity activity,String title,String detail,boolean enabled,java.util.function.Consumer<Boolean> changed){

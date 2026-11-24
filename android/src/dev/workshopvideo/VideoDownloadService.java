@@ -122,7 +122,7 @@ public final class VideoDownloadService extends Service {
             try {
                 if(WallpaperContent.archive(raw)){
                     app.change(id,"message","正在自动适配手机壁纸…");
-                    SceneDownload.Prepared prepared=SceneDownload.prepare(raw,temporary,workspace,()->ensureRunning(id));
+                    SceneDownload.Prepared prepared;try(JsShaderTranslator translator=new JsShaderTranslator(this)){prepared=SceneDownload.prepare(raw,temporary,workspace,()->ensureRunning(id),translator);}
                     kind=prepared.kind();effects=prepared.effects();adapted=prepared.adapted();adaptationReport=prepared.report();
                 }else if(plan.bundle())throw new SceneDownload.Rejected("场景没有可解析的资源包",null);
                 else kind=WallpaperContent.kind(temporary);

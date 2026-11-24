@@ -17,6 +17,21 @@ final class EffectPanel extends LinearLayout {
  }
  private String number(String key,float value){return key.equals("fallbackPages")||key.equals("fps")||key.equals("hue")?String.valueOf(Math.round(value)):format(value);}
  private String format(float f){return String.format(Locale.CHINA,"%.2f",f);}
+ /** Author switches of a converted scene (bool and combo properties that show or hide layers). */
+ private org.json.JSONObject sceneProperties=new org.json.JSONObject();
+ void sceneProperties(org.json.JSONObject properties){sceneProperties=properties==null?new org.json.JSONObject():properties;build();}
+ private void propertyControls(){
+  if(sceneProperties.length()==0)return;heading("作品设置");
+  java.util.List<String> names=new java.util.ArrayList<>();for(java.util.Iterator<String> k=sceneProperties.keys();k.hasNext();)names.add(k.next());
+  names.sort(java.util.Comparator.comparingInt(n->sceneProperties.optJSONObject(n).optInt("order",0)));
+  for(String name:names){
+   org.json.JSONObject p=sceneProperties.optJSONObject(name);String key="user."+name,label=p.optString("label",name);
+   if(p.optString("type").equals("bool")){if(!value.has(key))VideoApp.put(value,key,p.optBoolean("value",String.valueOf(p.opt("value")).equals("true")));toggle(key,label,true);}
+   else{org.json.JSONArray options=p.optJSONArray("options");if(options==null||options.length()<2||options.length()>6)continue;String[] keys=new String[options.length()],labels=new String[options.length()];
+    for(int i=0;i<keys.length;i++){keys[i]=options.optJSONArray(i).optString(1);labels[i]=options.optJSONArray(i).optString(0);}
+    if(!value.has(key))VideoApp.put(value,key,String.valueOf(p.opt("value")));choice(key,label,keys,labels);}
+  }
+ }
  void sceneLayers(float[] depths,String[] names,boolean xray){layerDepths=depths;layerNames=names;this.xray=xray;layerCount=Math.min(32,depths.length);build();}
  private void layerControls(){
   if(xray){heading("触摸透视");toggle("xray","按住并拖动查看另一层图片",true);if(value.optBoolean("xray",true))slider("xraySize","揭示范围",.01f,1,"");}
@@ -28,7 +43,7 @@ final class EffectPanel extends LinearLayout {
   control(strip);
   String hint="";if(key.equals("alignment"))hint=switch(value.optString(key)){case "fill"->"拉伸画面，填满整个屏幕";case "free"->"保持完整画面，可自由调整缩放与位置";default->"按原比例铺满屏幕，裁切超出部分";};
   if(key.equals("motionMode"))hint=switch(value.optString(key)){case "device"->"倾斜手机时，画面跟随产生视差";case "scroll"->"左右翻动桌面时，背景跟随移动";default->"保持画面位置";};
-  if(!hint.isEmpty()){TextView detail=label(hint,12,Ui.SUBTLE);detail.setPadding(dp(2),dp(8),0,dp(2));control(detail);}
+  // Options speak for themselves; no descriptive line under each choice.
  }
  private void backgroundColor(){colorControl("backgroundColor","背景颜色","#000000");}
  private void colorControl(String key,String title,String defaultColor){
@@ -38,18 +53,18 @@ final class EffectPanel extends LinearLayout {
  }
  private void buildVideo(){
   removeAllViews();card=null;heading("运动响应");choice("motionMode","响应方式",new String[]{"disabled","device","scroll"},new String[]{"关闭","设备倾斜","桌面滚动"});if(value.optString("motionMode").equals("device"))slider("strength","运动强度",0,1,"");
-  if(value.optString("motionMode").equals("scroll")){choice("pageMode","背景分段",new String[]{"auto","manual"},new String[]{"自动","自定义"});if(value.optString("pageMode").equals("manual"))slider("fallbackPages","分段页数",1,12," 页");control(label(value.optString("pageMode").equals("manual")?"每次翻页移动一段背景":"按画面比例分段，并同步系统提供的桌面页数",11,Ui.MUTED));}
+  if(value.optString("motionMode").equals("scroll")){choice("pageMode","背景分段",new String[]{"auto","manual"},new String[]{"自动","自定义"});if(value.optString("pageMode").equals("manual"))slider("fallbackPages","分段页数",1,12," 页");}
   heading("播放与构图");toggle("flip","水平镜像",true);slider("speed","播放速度",.25f,2,"×");choice("alignment","画面适配",new String[]{"cover","fill","free"},new String[]{"铺满","拉伸","自由"});if(value.optString("alignment").equals("free")){slider("zoom","缩放",1,2.5f,"×");slider("x","水平位置",-.5f,.5f,"");slider("y","垂直位置",-.5f,.5f,"");}backgroundColor();
   heading("颜色调节");toggleRebuild("showColorOptions","调整画面颜色");if(value.optBoolean("showColorOptions",true)){slider("brightness","亮度",.2f,1.8f,"×");slider("contrast","对比度",0,2,"×");slider("saturation","饱和度",0,2,"×");slider("hue","色相",-180,180,"°");}
   card=null;addReset("重置视频设置",()->value=EffectOptions.video(null));
  }
  private void addReset(String title,Runnable defaults){Button reset=Ui.button(activity,title,Ui.Kind.GHOST,()->{defaults.run();build();changed();});reset.setTextColor(Ui.MUTED);reset.setCompoundDrawablesRelativeWithIntrinsicBounds(new Ui.Icon("refresh",Ui.MUTED,dp(16)),null,null,null);reset.setCompoundDrawablePadding(dp(6));LayoutParams p=new LayoutParams(-2,dp(48));p.gravity=Gravity.CENTER_HORIZONTAL;p.topMargin=dp(12);addView(reset,p);}
  private void toggleRebuild(String key,String title){Switch control=new Switch(activity);control.setText(title);control.setTextColor(Ui.TEXT);control.setTextSize(13);control.setThumbTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked},new int[]{}},new int[]{Ui.ACCENT,0xff81909f}));control.setTrackTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked},new int[]{}},new int[]{0xff355c51,0xff303d4b}));control.setMinHeight(dp(46));control.setChecked(value.optBoolean(key,key.equals("showColorOptions")));control.setOnCheckedChangeListener((v,on)->{VideoApp.put(value,key,on);build();changed();});control(control);}
- private void build(){if(kind.equals("video")){buildVideo();return;}removeAllViews();card=null;
-  heading("体感与拖动");toggle("gyro",hasSensor?"随手机倾斜产生视差":"此设备暂无可用姿态传感器",hasSensor);if(value.optBoolean("gyro")&&hasSensor){slider("strength","倾斜强度",0,1,"");slider("smooth","响应平滑时间",.03f,1," 秒");toggle("reverseX","反转左右方向",true);toggle("reverseY","反转上下方向",true);}toggle("touch","触摸拖动画面",true);if(value.optBoolean("touch")&&!value.optBoolean("pan"))slider("touchStrength","拖动幅度",0,1,"");else if(value.optBoolean("touch")&&value.optBoolean("pan"))control(label("桌面翻页已开启，拖动优先用于翻页",11,Ui.MUTED));
-  heading("桌面翻页");toggle("pan","桌面翻页时跟随滑动",true);if(value.optBoolean("pan")){choice("pageMode","背景分段",new String[]{"auto","manual"},new String[]{"自动","自定义"});if(value.optString("pageMode").equals("manual"))slider("fallbackPages","分段页数",1,12," 页");control(label("按桌面提供的偏移或触摸补偿跟随，兼容选项位于通用设置",11,Ui.MUTED));}
+ private void build(){if(kind.equals("video")){buildVideo();return;}removeAllViews();card=null;if(kind.equals("scene"))propertyControls();
+  heading("体感与拖动");toggle("gyro",hasSensor?"随手机倾斜产生视差":"此设备暂无可用姿态传感器",hasSensor);if(value.optBoolean("gyro")&&hasSensor){slider("strength","倾斜强度",0,1,"");slider("smooth","响应平滑时间",.03f,1," 秒");toggle("reverseX","反转左右方向",true);toggle("reverseY","反转上下方向",true);}toggle("touch","触摸拖动画面",true);if(value.optBoolean("touch")&&!value.optBoolean("pan"))slider("touchStrength","拖动幅度",0,1,"");else if(value.optBoolean("touch")&&value.optBoolean("pan"))control(label("拖动用于桌面翻页",11,Ui.MUTED));
+  heading("桌面翻页");toggle("pan","桌面翻页时跟随滑动",true);if(value.optBoolean("pan")){choice("pageMode","背景分段",new String[]{"auto","manual"},new String[]{"自动","自定义"});if(value.optString("pageMode").equals("manual"))slider("fallbackPages","分段页数",1,12," 页");}
   heading("构图与颜色");slider("zoom","缩放",1,2.5f,"×");slider("x","水平位置",-.5f,.5f,"");slider("y","垂直位置",-.5f,.5f,"");slider("rotation","画面旋转",-15,15,"°");slider("brightness","亮度",.2f,1.8f,"×");slider("contrast","对比度",0,2,"×");slider("saturation","饱和度",0,2,"×");slider("hue","色相",-180,180,"°");if(kind.equals("scene")&&layerCount>1)slider("layerDepth","分层视差深度",0,2,"×");
-  heading("触摸与叠加");toggle("ripple","触摸波纹",true);toggle("particles","漂浮粒子",true);if(value.optBoolean("particles"))slider("particleCount","粒子数量",4,100,"");if(value.optBoolean("ripple")||value.optBoolean("particles"))colorControl("color","波纹与粒子颜色","#a9efd5");if(value.optBoolean("particles")||kind.equals("animated"))slider("speed",kind.equals("animated")?"动画速度":"粒子运动速度",.25f,2,"×");slider("fps","绘制帧率",15,120," 帧/秒");control(label("默认上限 120 帧，跟随屏幕刷新节奏；视频仍保持原始帧率",11,Ui.MUTED));
+  heading("触摸与叠加");toggle("ripple","触摸波纹",true);toggle("particles","漂浮粒子",true);if(value.optBoolean("particles"))slider("particleCount","粒子数量",4,100,"");if(value.optBoolean("ripple")||value.optBoolean("particles"))colorControl("color","波纹与粒子颜色","#a9efd5");if(value.optBoolean("particles")||kind.equals("animated"))slider("speed",kind.equals("animated")?"动画速度":"粒子运动速度",.25f,2,"×");slider("fps","绘制帧率",15,120," 帧/秒");
   if(kind.equals("scene"))layerControls();card=null;addReset("恢复默认效果",()->value=EffectOptions.normalize(null));
  }
 }

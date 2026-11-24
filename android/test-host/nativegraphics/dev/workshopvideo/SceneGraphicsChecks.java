@@ -16,7 +16,8 @@ public class SceneGraphicsChecks {
    File source=workshop(id);SceneAdapter.Report report=SceneAdapter.inspect(source,workspace);
    try{results.put(id,new JSONObject().put("usable",report.usable()).put("reason",report.error).put("xrays",report.xrays).put("layers",report.scene.layers.size()));
     if(id.equals("2297826176")){assertTrue(report.describe(),report.usable());assertEquals(1,report.xrays);File adapted=new File(workspace,id+".zip");SceneAdapter.write(report,adapted);try(WallpaperContent.Scene s=WallpaperContent.scene(adapted)){Bitmap poster=ScenePainter.poster(s,512);ScenePainter.verify(poster);try(FileOutputStream out=new FileOutputStream(new File(workspace,id+".png"))){poster.compress(Bitmap.CompressFormat.PNG,100,out);}assertNotNull(s.layers.get(1).reveal);JSONObject off=EffectOptions.normalize(null);Bitmap screen=Bitmap.createBitmap(512,512,Bitmap.Config.ARGB_8888);Canvas surface=new Canvas(screen);surface.drawColor(Color.BLACK);surface.scale(512f/s.width,512f/s.height);ScenePainter.layers(surface,s,new Paint(3),off,new EffectMotion.Frame(0,0,1,0),256,256,false);ScenePainter.verify(screen);}}
-    else {assertFalse(report.describe(),report.usable());assertTrue(report.error.startsWith("X-ray"));}
+    // Unsupported X-ray variants drop only the reveal; the layer and its other effects stay.
+    else {assertTrue(report.describe(),report.usable());assertEquals(0,report.xrays);assertTrue(report.describe(),report.droppedEffects.containsKey("xray"));assertTrue(report.describe(),report.describe().contains("xray（X-ray"));}
    }finally{report.scene.close();}
   }
   Files.writeString(new File(workspace,"xray-results.json").toPath(),results.toString(2));

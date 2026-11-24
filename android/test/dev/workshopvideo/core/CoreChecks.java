@@ -68,6 +68,11 @@ public final class CoreChecks {
         FrameSelectionChecks.run();
         PaginationChecks.run();
         QueryCacheChecks.run();
+        RatingChecks.run();
+        CommentChecks.run();
+        PuppetChecks.run();
+        ParticleChecks.run();
+        PointerChecks.run();
         DesktopBehaviorChecks.run();
         MotionPagingChecks.run();
         AdaptivePagingChecks.run();

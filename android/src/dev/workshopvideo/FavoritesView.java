@@ -23,7 +23,7 @@ public final class FavoritesView extends LinearLayout {
         summary=Ui.text(activity,"",12,Ui.MUTED);summary.setPadding(0,dp(2),0,dp(12));addView(summary);
         grid=new GridView(activity);grid.setNumColumns(2);grid.setHorizontalSpacing(dp(12));grid.setVerticalSpacing(dp(12));grid.setSelector(android.R.color.transparent);grid.setClipToPadding(false);grid.setPadding(0,0,0,dp(16));grid.setVerticalScrollBarEnabled(false);grid.setAdapter(adapter);
         grid.setOnItemClickListener((p,v,i,id)->open.accept(entries.get(i)));
-        grid.setOnItemLongClickListener((p,v,i,id)->{JSONObject item=entries.get(i);AppSheet sheet=new AppSheet(activity,item.optString("title"),"已收藏的工坊作品",item.optString("previewUrl"));sheet.action("play","查看详情","预览、介绍与下载",false,()->open.accept(item));sheet.action("heart","取消收藏","已下载的内容不受影响",false,()->{try{app.toggleFavorite(item);refresh();}catch(Exception e){Toast.makeText(activity,VideoApp.error(e),Toast.LENGTH_LONG).show();}});sheet.show();return true;});addView(grid,new LayoutParams(-1,0,1));
+        grid.setOnItemLongClickListener((p,v,i,id)->{JSONObject item=entries.get(i);AppSheet sheet=new AppSheet(activity,item.optString("title"),"已收藏的工坊作品",item.optString("previewUrl"));sheet.action("play","查看详情","",false,()->open.accept(item));sheet.action("heart","取消收藏","",false,()->{try{app.toggleFavorite(item);refresh();}catch(Exception e){Toast.makeText(activity,VideoApp.error(e),Toast.LENGTH_LONG).show();}});sheet.show();return true;});addView(grid,new LayoutParams(-1,0,1));
         LinearLayout box=Ui.empty(activity,"heart","还没有收藏","在发现中点一下作品封面上的爱心即可收藏。\n收藏不占空间，删除已下载内容也不会影响收藏。");
         Button go=Ui.button(activity,"去发现",Ui.Kind.PRIMARY,discover);LinearLayout.LayoutParams gp=new LinearLayout.LayoutParams(dp(200),dp(46));gp.topMargin=dp(22);gp.gravity=Gravity.CENTER_HORIZONTAL;box.addView(go,gp);
         empty=box;addView(empty);refresh();
@@ -51,5 +51,5 @@ public final class FavoritesView extends LinearLayout {
         if(item.optString("itemId").startsWith("local:"))return "本地";
         return switch(item.optString("type",item.optBoolean("video",true)?"Video":"")){case "Video"->"视频";case "Scene"->"场景";case "Web"->"网页";case "Application"->"应用";default->"";};
     }
-    public void refresh(){List<JSONObject> next=app.favorites();Collections.reverse(next);String key=next.toString();if(!key.equals(fingerprint)){fingerprint=key;entries.clear();entries.addAll(next);adapter.notifyDataSetChanged();}summary.setText(entries.size()+" 个收藏 · 长按可取消收藏");summary.setVisibility(entries.isEmpty()?GONE:VISIBLE);empty.setVisibility(entries.isEmpty()?VISIBLE:GONE);grid.setVisibility(entries.isEmpty()?GONE:VISIBLE);}
+    public void refresh(){List<JSONObject> next=app.favorites();Collections.reverse(next);String key=next.toString();if(!key.equals(fingerprint)){fingerprint=key;entries.clear();entries.addAll(next);adapter.notifyDataSetChanged();}summary.setText(entries.size()+" 个收藏");summary.setVisibility(entries.isEmpty()?GONE:VISIBLE);empty.setVisibility(entries.isEmpty()?VISIBLE:GONE);grid.setVisibility(entries.isEmpty()?GONE:VISIBLE);}
 }

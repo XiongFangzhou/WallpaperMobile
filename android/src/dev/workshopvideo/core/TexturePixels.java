@@ -12,6 +12,24 @@ public final class TexturePixels {
  public static boolean sprite(byte[] src){return src.length>40&&flags(src)>=0&&(flags(src)&4)!=0;}
  public static boolean video(byte[] src){return src.length>40&&flags(src)>=0&&(flags(src)&32)!=0;}
  private static int flags(byte[] src){try{ByteBuffer b=ByteBuffer.wrap(src).order(ByteOrder.LITTLE_ENDIAN);if(!string(b).equals("TEXV0005")||!string(b).equals("TEXI0001"))return -1;b.getInt();return b.getInt();}catch(Exception e){return -1;}}
+ /** The MP4 stored in a video texture (TEXB0004 with the video flag): the first mip's payload, unmodified. */
+ public static byte[] mp4(byte[] src)throws IOException {
+  long[] range=mp4Range(src);if(range[1]>src.length-range[0])throw new IOException("视频纹理数据越界");
+  byte[] out=java.util.Arrays.copyOfRange(src,(int)range[0],(int)(range[0]+range[1]));if(out[4]!='f'||out[5]!='t'||out[6]!='y'||out[7]!='p')throw new IOException("视频纹理不是 MP4");return out;
+ }
+ /** Offset and length of the MP4 inside a video texture, read from its first few hundred bytes so large videos can be streamed. */
+ public static long[] mp4Range(byte[] head)throws IOException {
+  try{
+   ByteBuffer b=ByteBuffer.wrap(head).order(ByteOrder.LITTLE_ENDIAN);if(!string(b).equals("TEXV0005")||!string(b).equals("TEXI0001"))throw new IOException("不支持的 TEX 头部");
+   b.getInt();int flags=b.getInt();for(int i=0;i<5;i++)b.getInt();if((flags&32)==0)throw new IOException("不是视频纹理");
+   if(!string(b).equals("TEXB0004"))throw new IOException("不支持的视频纹理容器");// image count, free-image format (-1 for video), MP4 flag (0 in real packages), then the mip table.
+   b.getInt();b.getInt();b.getInt();
+   int mips=b.getInt();if(mips<1)throw new IOException("视频纹理为空");b.getInt();b.getInt();int compressed=b.getInt();b.getInt();int n=b.getInt();
+   if(compressed!=0)throw new IOException("压缩的视频纹理尚不支持");long length=Integer.toUnsignedLong(n);if(length<16)throw new IOException("视频纹理为空");
+   if(b.remaining()>=8&&!(b.get(b.position()+4)=='f'&&b.get(b.position()+5)=='t'&&b.get(b.position()+6)=='y'&&b.get(b.position()+7)=='p'))throw new IOException("视频纹理不是 MP4");
+   return new long[]{b.position(),length};
+  }catch(BufferUnderflowException|IllegalArgumentException e){throw new IOException("视频纹理截断",e);}
+ }
  /** Frame table of a single-image sprite sheet, normalized to the image area. Empty when the texture is not animated. */
  public static java.util.List<Frame> frames(byte[] src)throws IOException {
   try{

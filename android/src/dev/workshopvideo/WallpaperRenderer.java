@@ -36,7 +36,7 @@ final class WallpaperRenderer {
     private final java.util.concurrent.CompletableFuture<Void> released=new java.util.concurrent.CompletableFuture<>();
     private final Handler handler;private final android.content.Context context;private Events events;
     private WallpaperEffects effects=new WallpaperEffects();
-    private SceneGpu sceneGpu;private CanvasWallpaper canvasContent;private Bitmap canvasBitmap;private boolean canvasMode;private long canvasDirtyUntil;private boolean usingSource;private Bitmap uploadedCanvas;private int uploadedGeneration,uploadedWidth,uploadedHeight,maxTextureSize=2048;private dev.workshopvideo.core.EffectMotion.Frame lastCanvasMotion;private Bitmap overlay;private int overlayProgram,overlayTexture;
+    private SceneGpu sceneGpu;private boolean gles3;private CanvasWallpaper canvasContent;private Bitmap canvasBitmap;private boolean canvasMode;private long canvasDirtyUntil;private boolean usingSource;private Bitmap uploadedCanvas;private int uploadedGeneration,uploadedWidth,uploadedHeight,maxTextureSize=2048;private dev.workshopvideo.core.EffectMotion.Frame lastCanvasMotion;private Bitmap overlay;private int overlayProgram,overlayTexture;
     private WallpaperFrameClock frameClock;
     private final RenderStats renderStats=new RenderStats();
     private void requestFrame(){if(frameClock!=null&&!closed&&!failed&&visible)frameClock.request();}
@@ -56,6 +56,15 @@ final class WallpaperRenderer {
     private boolean visible,ready,hasFrame;private volatile boolean closed,failed;
     private float offset=.5f;private JSONObject config;private final float[] matrix=new float[16];
     private final FloatBuffer quad=ByteBuffer.allocateDirect(16*4).order(ByteOrder.nativeOrder()).asFloatBuffer();
+    /** Scene scripts of the scene being drawn; the pointer (touch) is their mouse. */
+    private SceneScripts scripts;
+    private void runScripts(WallpaperContent.Scene scene,dev.workshopvideo.core.CanvasCamera.Frame camera){
+        if(scripts!=null&&scripts.scene!=scene){scripts.close();scripts=null;}
+        if(scene==null||scene.scripts==null||camera==null)return;
+        if(scripts==null)scripts=new SceneScripts(context,scene);
+        for(float[] e:effects.drainPointer()){float[] p=dev.workshopvideo.core.SceneGeometry.sceneFromScreen(camera,scene.width,scene.height,e[1],e[2]);scripts.pointer(e[0]==0?"down":e[0]==2?"move":"up",p[0],p[1],e[3]>0);}
+        scripts.frame(canvasContent.sceneSeconds(),dev.workshopvideo.core.SceneGeometry.sceneFromScreen(camera,scene.width,scene.height,effects.pointerX(),effects.pointerY()),effects.pointerDown());
+    }
     WallpaperRenderer(android.content.Context context){this(context,null);}
     WallpaperRenderer(android.content.Context context,Events events){this.context=context;this.events=events;android.os.PowerManager power=context.getSystemService(android.os.PowerManager.class);powerSaving=power!=null&&power.isPowerSaveMode();staticInSaver=AppSettings.batteryStatic(context);quad.put(new float[]{-1,-1,0,0, 1,-1,1,0, -1,1,0,1, 1,1,1,1}).position(0);thread.start();handler=new Handler(thread.getLooper());handler.post(()->frameClock=new WallpaperFrameClock(()->effects.options.optInt("fps",120),this::needsFrames,()->draw(framePending)));}
     void surface(Surface surface,int width,int height,JSONObject config,boolean visible,Events callbacks){if(!closed)handler.post(()->events=callbacks);surface(surface,width,height,config,visible);}
@@ -90,9 +99,15 @@ final class WallpaperRenderer {
 
         if(display==EGL14.EGL_NO_DISPLAY){display=EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY);
         synchronized(DISPLAY_LOCK){if(displayUsers==0){int[] version=new int[2];if(!EGL14.eglInitialize(display,version,0,version,1))throw new IllegalStateException("无法初始化壁纸画面。");}displayUsers++;displayLease=true;}
-        int[] attrs={EGL14.EGL_RED_SIZE,8,EGL14.EGL_GREEN_SIZE,8,EGL14.EGL_BLUE_SIZE,8,EGL14.EGL_ALPHA_SIZE,8,EGL14.EGL_RENDERABLE_TYPE,EGL14.EGL_OPENGL_ES2_BIT,EGL14.EGL_SURFACE_TYPE,offscreen?EGL14.EGL_PBUFFER_BIT:EGL14.EGL_WINDOW_BIT,EGL14.EGL_NONE};
-        EGLConfig[] choices=new EGLConfig[1];int[] count=new int[1];if(!EGL14.eglChooseConfig(display,attrs,0,choices,0,1,count,0)||count[0]==0)throw new IllegalStateException("手机不支持所需的壁纸渲染。");
-        glContext=EGL14.eglCreateContext(display,choices[0],EGL14.EGL_NO_CONTEXT,new int[]{EGL14.EGL_CONTEXT_CLIENT_VERSION,2,EGL14.EGL_NONE},0);
+        // GLES 3 runs author scene effects; GLES 2 remains a complete fallback without them.
+        EGLConfig[] choices=new EGLConfig[1];int[] count=new int[1];gles3=false;glContext=EGL14.EGL_NO_CONTEXT;
+        for(int version:new int[]{3,2}){
+            int[] attrs={EGL14.EGL_RED_SIZE,8,EGL14.EGL_GREEN_SIZE,8,EGL14.EGL_BLUE_SIZE,8,EGL14.EGL_ALPHA_SIZE,8,EGL14.EGL_RENDERABLE_TYPE,version==3?0x40:EGL14.EGL_OPENGL_ES2_BIT,EGL14.EGL_SURFACE_TYPE,offscreen?EGL14.EGL_PBUFFER_BIT:EGL14.EGL_WINDOW_BIT,EGL14.EGL_NONE};
+            if(!EGL14.eglChooseConfig(display,attrs,0,choices,0,1,count,0)||count[0]==0)continue;
+            glContext=EGL14.eglCreateContext(display,choices[0],EGL14.EGL_NO_CONTEXT,new int[]{EGL14.EGL_CONTEXT_CLIENT_VERSION,version,EGL14.EGL_NONE},0);
+            if(glContext!=EGL14.EGL_NO_CONTEXT){gles3=version==3;break;}
+        }
+        if(count[0]==0&&glContext==EGL14.EGL_NO_CONTEXT)throw new IllegalStateException("手机不支持所需的壁纸渲染。");
         if(glContext==EGL14.EGL_NO_CONTEXT)throw new IllegalStateException("无法创建壁纸 GL 上下文：0x"+Integer.toHexString(EGL14.eglGetError()));
         window=offscreen?EGL14.eglCreatePbufferSurface(display,choices[0],new int[]{EGL14.EGL_WIDTH,width,EGL14.EGL_HEIGHT,height,EGL14.EGL_NONE},0):EGL14.eglCreateWindowSurface(display,choices[0],surface,new int[]{EGL14.EGL_NONE},0);
         if(window==EGL14.EGL_NO_SURFACE||!EGL14.eglMakeCurrent(display,window,window,glContext))throw new IllegalStateException("无法连接壁纸显示区域，EGL=0x"+Integer.toHexString(EGL14.eglGetError()));
@@ -151,7 +166,7 @@ final class WallpaperRenderer {
             float us=fit.uSize(),vs=fit.vSize(),u=fit.u0(),v=fit.v0();
             long preparedAt=System.nanoTime();
             int bg=android.graphics.Color.parseColor(effects.options.optString("backgroundColor","#000000"));GLES20.glViewport(0,0,width,height);GLES20.glClearColor(android.graphics.Color.red(bg)/255f,android.graphics.Color.green(bg)/255f,android.graphics.Color.blue(bg)/255f,1);GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);GLES20.glUseProgram(program);
-            if(layers){if(sceneGpu==null)sceneGpu=new SceneGpu(maxTextureSize);sceneGpu.draw(canvasContent.gpuScene(),effects,camera,lastCanvasMotion,width,height,canvasContent.sceneSeconds());}
+            if(layers){if(sceneGpu==null){SceneGpu.loadBlending(context);sceneGpu=new SceneGpu(maxTextureSize,gles3);}WallpaperContent.Scene drawn=canvasContent.gpuScene();if(drawn!=null&&camera!=null){float[] finger=dev.workshopvideo.core.SceneGeometry.sceneFromScreen(camera,drawn.width,drawn.height,effects.touchX(),effects.touchY());drawn.cursorX=finger[0];drawn.cursorY=finger[1];drawn.cursorDown=effects.pointerDown();}runScripts(drawn,camera);sceneGpu.draw(canvasContent.gpuScene(),effects,camera,lastCanvasMotion,width,height,canvasContent.sceneSeconds());}
             else{
             GLES20.glActiveTexture(GLES20.GL_TEXTURE0);GLES20.glBindTexture(canvasMode?GLES20.GL_TEXTURE_2D:GLES11Ext.GL_TEXTURE_EXTERNAL_OES,textureId);if(canvasMode&&(uploadedCanvas!=upload||uploadedGeneration!=upload.getGenerationId())){if(uploadedWidth==upload.getWidth()&&uploadedHeight==upload.getHeight())GLUtils.texSubImage2D(GLES20.GL_TEXTURE_2D,0,0,0,upload);else GLUtils.texImage2D(GLES20.GL_TEXTURE_2D,0,upload,0);uploadedCanvas=upload;uploadedGeneration=upload.getGenerationId();uploadedWidth=upload.getWidth();uploadedHeight=upload.getHeight();}GLES20.glUniform1i(GLES20.glGetUniformLocation(program,"video"),0);
             float aspect=width/(float)height,cover=canvasMode||!alignment.equals("cover")?1:(float)(Math.abs(Math.cos(Math.toRadians(motion.rotation())))+Math.abs(Math.sin(Math.toRadians(motion.rotation())))*Math.max(aspect,1/aspect));GLES20.glUniform1f(GLES20.glGetUniformLocation(program,"aspect"),aspect);GLES20.glUniform2f(GLES20.glGetUniformLocation(program,"scale"),fit.scaleX()*cover,fit.scaleY()*cover);GLES20.glUniform4f(GLES20.glGetUniformLocation(program,"crop"),u,v,us,vs);GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(program,"transform"),1,false,matrix,0);
@@ -181,7 +196,7 @@ final class WallpaperRenderer {
     }
     private void error(Throwable problem){if(failed)return;failed=true;String message=VideoApp.error(problem);if(events!=null)events.failed(message);release();}
     private void releaseContent(){
-        handler.removeCallbacks(watchdog);stopFrames();if(sceneGpu!=null){sceneGpu.close();sceneGpu=null;}if(canvasContent!=null){canvasContent.close();canvasContent=null;}if(canvasBitmap!=null){canvasBitmap.recycle();canvasBitmap=null;}if(overlay!=null){overlay.recycle();overlay=null;}ready=hasFrame=framePending=false;
+        handler.removeCallbacks(watchdog);stopFrames();if(sceneGpu!=null){sceneGpu.close();sceneGpu=null;}if(scripts!=null){scripts.close();scripts=null;}if(canvasContent!=null){canvasContent.close();canvasContent=null;}if(canvasBitmap!=null){canvasBitmap.recycle();canvasBitmap=null;}if(overlay!=null){overlay.recycle();overlay=null;}ready=hasFrame=framePending=false;
         if(player!=null){MediaPlayer old=player;player=null;try{old.setSurface(null);old.release();}catch(Exception ignored){}}
         if(decoderSurface!=null){decoderSurface.release();decoderSurface=null;}if(texture!=null){texture.release();texture=null;}
         if(display!=EGL14.EGL_NO_DISPLAY){if(overlayProgram!=0)GLES20.glDeleteProgram(overlayProgram);if(overlayTexture!=0)GLES20.glDeleteTextures(1,new int[]{overlayTexture},0);if(program!=0)GLES20.glDeleteProgram(program);if(textureId!=0)GLES20.glDeleteTextures(1,new int[]{textureId},0);}

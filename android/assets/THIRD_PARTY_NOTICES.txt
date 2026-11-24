@@ -39,6 +39,16 @@ https://github.com/JetBrains/java-annotations
 
 Full license texts are included under assets/licenses/ in the APK.
 
+we-scene shader preprocessor, HLSL-to-GLSL translator and rebuilt shader headers
+(MIT), from WebWallGL renderer/vendor/we-scene, commit ba413ac985f324a6827cbc12a81ed077d47fdab2
+Copyright (c) 2026 aurora-wallpaper contributors
+https://github.com/oneincase/webwallgl
+See licenses/we-scene-MIT.txt.
+
+AndroidX JavaScriptEngine 1.1.1 (Apache-2.0)
+Copyright The Android Open Source Project
+https://developer.android.com/jetpack/androidx/releases/javascriptengine
+
 AndroidX Media3 1.5.1 and AndroidX support libraries (Apache-2.0)
 Copyright The Android Open Source Project
 https://github.com/androidx/media

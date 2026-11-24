@@ -172,7 +172,7 @@ public final class VideoApp extends Application {
     /** Cheap enough for every card bind: a set lookup on the cached favorite ids. */
     public synchronized boolean isFavorite(String itemId){storedFavorites();return favoriteIds.contains(itemId);}
     public synchronized void toggleFavorite(JSONObject item){
-        JSONObject entry=new JSONObject();for(String key:new String[]{"itemId","title","previewUrl","description","video","type","size","created"})if(item.has(key))put(entry,key,item.opt(key));put(entry,"favoriteAt",System.currentTimeMillis());
+        JSONObject entry=new JSONObject();for(String key:new String[]{"itemId","title","previewUrl","description","video","type","size","created","score","votesUp","votesDown"})if(item.has(key))put(entry,key,item.opt(key));put(entry,"favoriteAt",System.currentTimeMillis());
         JSONArray next=new JSONArray();for(JSONObject value:FavoriteIndex.toggle(favorites(),entry,value->value.optString("itemId")))next.put(value);
         if(!prefs.edit().putString("favorites",next.toString()).commit())throw new IllegalStateException("无法保存收藏。");
         changed();

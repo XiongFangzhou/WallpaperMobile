@@ -30,6 +30,8 @@ secrets.properties
 local.properties
 
 # Generated output.
+android/assets/we-shader-translator.js
+android/assets/we-blending.glsl
 node_modules/
 .gradle/
 *.class

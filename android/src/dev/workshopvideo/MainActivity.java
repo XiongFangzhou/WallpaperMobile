@@ -31,6 +31,8 @@ public final class MainActivity extends Activity {
     private TextView account,pageTitle,count,loadingText,pageLabel;
     private ImageView filterButton,previousPage,nextPage;
     private LinearLayout pager;
+    /** Continuous feed: items hold pages firstPage..displayed.page; appending fetches the next one. */
+    private int firstPage=1;private boolean appending;
     private ProgressBar refreshing;
     private final ArrayList<TextView> chips=new ArrayList<>();
     private boolean hasResults,stale;
@@ -128,17 +130,21 @@ public final class MainActivity extends Activity {
         header.addView(status);page.addView(header);
         FrameLayout results=new FrameLayout(this);
         grid=new GridView(this);grid.setNumColumns(2);grid.setHorizontalSpacing(dp(12));grid.setVerticalSpacing(dp(12));grid.setPadding(dp(18),dp(2),dp(18),dp(16));grid.setClipToPadding(false);grid.setSelector(android.R.color.transparent);grid.setVerticalScrollBarEnabled(false);
-        adapter=new CardAdapter();grid.setAdapter(adapter);results.addView(grid,new FrameLayout.LayoutParams(-1,-1));
+        adapter=new CardAdapter();grid.setAdapter(adapter);
+        grid.setOnScrollListener(new AbsListView.OnScrollListener(){
+            public void onScrollStateChanged(AbsListView view,int state){}
+            public void onScroll(AbsListView view,int first,int visible,int count){if(count>0&&first+visible>=count-6)loadMore();updatePagination();}
+        });results.addView(grid,new FrameLayout.LayoutParams(-1,-1));
         loading=column();loading.setGravity(Gravity.CENTER_HORIZONTAL);loading.setPadding(0,dp(96),0,0);loading.addView(Ui.spinner(this),new LinearLayout.LayoutParams(dp(36),dp(36)));
         loadingText=text("",13,MUTED);loadingText.setPadding(0,dp(14),0,0);loading.addView(loadingText);results.addView(loading,new FrameLayout.LayoutParams(-1,-2));
         discoverEmpty=Ui.empty(this,"discover","","");emptyActions=column();emptyActions.setGravity(Gravity.CENTER_HORIZONTAL);emptyActions.setPadding(0,dp(22),0,0);discoverEmpty.addView(emptyActions,new LinearLayout.LayoutParams(-1,-2));
         ScrollView emptyScroll=new ScrollView(this);emptyScroll.setFillViewport(true);emptyScroll.addView(discoverEmpty);results.addView(emptyScroll,new FrameLayout.LayoutParams(-1,-1));
         page.addView(results,new LinearLayout.LayoutParams(-1,0,1));
         pager=row();pager.setGravity(Gravity.CENTER_VERTICAL);pager.setPadding(dp(18),dp(6),dp(18),dp(10));
-        previousPage=Ui.iconButton(this,"previous","上一页",()->goToPage(displayed.page-1));pager.addView(previousPage,new LinearLayout.LayoutParams(dp(46),dp(46)));
+        previousPage=Ui.iconButton(this,"previous","上一页",()->goToPage(visiblePage()-1));pager.addView(previousPage,new LinearLayout.LayoutParams(dp(46),dp(46)));
         pageLabel=text("",13,TEXT);pageLabel.setGravity(Gravity.CENTER);pageLabel.setTypeface(null,Typeface.BOLD);pageLabel.setBackground(Ui.pressable(Ui.outlined(Ui.RAISED,Ui.LINE,dp(14),dp(1)),0x22ffffff,dp(14)));pageLabel.setOnClickListener(v->jumpToPage());
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(46),1);lp.setMargins(dp(10),0,dp(10),0);pager.addView(pageLabel,lp);
-        nextPage=Ui.iconButton(this,"next","下一页",()->goToPage(displayed.page+1));pager.addView(nextPage,new LinearLayout.LayoutParams(dp(46),dp(46)));
+        nextPage=Ui.iconButton(this,"next","下一页",()->goToPage(visiblePage()+1));pager.addView(nextPage,new LinearLayout.LayoutParams(dp(46),dp(46)));
         page.addView(pager,new LinearLayout.LayoutParams(-1,-2));
         return page;
     }
@@ -164,7 +170,7 @@ public final class MainActivity extends Activity {
             else if(signedOut){Ui.empty(discoverEmpty,"登录后开始发现壁纸","也可以先公开浏览热门作品。\n下载和在线播放需要拥有 Wallpaper Engine 的 Steam 账号。");emptyAction("登录 Steam",Ui.Kind.PRIMARY,this::loginDialog);emptyAction("先公开浏览",Ui.Kind.GHOST,()->connect(null,null,false,true));}
             else{Ui.empty(discoverEmpty,"没有找到作品","换个关键词，或在筛选中放宽条件。");emptyAction("调整筛选",Ui.Kind.SECONDARY,this::filterDialog);}
         }
-        grid.setVisibility(empty?View.GONE:View.VISIBLE);grid.setAlpha(querying&&!empty?.55f:1);refreshing.setVisibility((querying||stale)&&!empty?View.VISIBLE:View.GONE);
+        grid.setVisibility(empty?View.GONE:View.VISIBLE);grid.setAlpha(querying&&!empty?.55f:1);refreshing.setVisibility((querying||stale||appending)&&!empty?View.VISIBLE:View.GONE);
         count.setText(!hasResults?"":resultLabel());updatePagination();
     }
     private void emptyAction(String label,Ui.Kind kind,Runnable action){Button button=Ui.button(this,label,kind,action);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(dp(220),dp(46));if(emptyActions.getChildCount()>0)p.topMargin=dp(8);emptyActions.addView(button,p);}
@@ -187,13 +193,18 @@ public final class MainActivity extends Activity {
         if(pager==null)return;
         int pages=WorkshopPages.count(total);boolean ready=hasResults&&!querying&&!stale;
         pager.setVisibility(hasResults&&pages>1&&!items.isEmpty()?View.VISIBLE:View.GONE);
-        Ui.enable(previousPage,ready&&displayed.page>1);Ui.enable(nextPage,ready&&displayed.page<pages);Ui.enable(pageLabel,ready);
-        pageLabel.setText("第 "+displayed.page+" / "+String.format(Locale.CHINA,"%,d",pages)+" 页");pageLabel.setContentDescription("当前第 "+displayed.page+" 页，共 "+pages+" 页，点击跳到指定页");
+        int current=visiblePage();Ui.enable(previousPage,ready&&current>1);Ui.enable(nextPage,ready&&current<pages);Ui.enable(pageLabel,ready);
+        pageLabel.setText("第 "+current+" / "+String.format(Locale.CHINA,"%,d",pages)+" 页");pageLabel.setContentDescription("当前第 "+current+" 页，共 "+pages+" 页，点击跳到指定页");
+    }
+    /** Page of the first card on screen. */
+    private int visiblePage(){
+        if(displayed==null)return 1;int first=grid==null?0:Math.max(0,grid.getFirstVisiblePosition());
+        return Math.max(firstPage,Math.min(displayed.page,firstPage+first/WorkshopQuery.PAGE_SIZE));
     }
     private void jumpToPage(){
         if(querying||!hasResults)return;int pages=WorkshopPages.count(total);
         AppSheet sheet=new AppSheet(this,"跳到指定页","共 "+String.format(Locale.CHINA,"%,d",pages)+" 页，当前第 "+displayed.page+" 页",null);
-        LinearLayout form=column();EditText page=input("输入 1–"+pages);page.setInputType(InputType.TYPE_CLASS_NUMBER);page.setImeOptions(EditorInfo.IME_ACTION_GO);page.setSelectAllOnFocus(true);page.setContentDescription("目标页码");page.setText(Integer.toString(displayed.page));form.addView(page,new LinearLayout.LayoutParams(-1,dp(48)));
+        LinearLayout form=column();EditText page=input("输入 1–"+pages);page.setInputType(InputType.TYPE_CLASS_NUMBER);page.setImeOptions(EditorInfo.IME_ACTION_GO);page.setSelectAllOnFocus(true);page.setContentDescription("目标页码");page.setText(Integer.toString(visiblePage()));form.addView(page,new LinearLayout.LayoutParams(-1,dp(48)));
         TextView error=text("",12,Ui.DANGER);error.setPadding(0,dp(8),0,0);error.setVisibility(View.GONE);form.addView(error);sheet.field(form);
         Runnable submit=()->{try{int target=WorkshopPages.target(page.getText().toString(),total);sheet.dialog.dismiss();goToPage(target);}catch(IllegalArgumentException problem){error.setText(problem.getMessage());error.setVisibility(View.VISIBLE);}};
         sheet.footerButton("取消",false,()->sheet.dialog.dismiss());sheet.footerButton("跳转",true,submit);
@@ -202,18 +213,18 @@ public final class MainActivity extends Activity {
     private void goToPage(int page){
         if(!hasResults)return;
         if(page<1||page>WorkshopPages.count(total)){toast("页码超出范围。");return;}
-        if(page==displayed.page)return;
+        if(page>=firstPage&&page<=displayed.page){if(grid!=null)grid.setSelection((page-firstPage)*WorkshopQuery.PAGE_SIZE);return;}
         WorkshopQuery query=displayed.copy();query.page=page;submitQuery(query);
     }
     private void search(boolean reset){
-        if(!reset){goToPage(displayed.page+1);return;}
+        if(!reset){loadMore();return;}
         if(search!=null)filters.text=search.getText().toString();
         WorkshopQuery query=filters.copy();query.page=1;submitQuery(query);
     }
     /** The last first page is shown at once on launch; a fresh query replaces it when Steam is ready. */
     private void restoreSnapshot(){
         try{WorkshopQuery first=filters.copy();first.page=1;DiscoverResults.Page saved=app.results.restore(first);if(saved==null)return;
-            items.addAll(saved.items());total=saved.total();displayed=first;hasResults=true;stale=true;}catch(RuntimeException ignored){}
+            items.addAll(saved.items());total=saved.total();displayed=first;firstPage=1;hasResults=true;stale=true;}catch(RuntimeException ignored){}
     }
     private void submitQuery(WorkshopQuery query){
         if(!app.canRecover()){loginDialog();return;}
@@ -231,9 +242,26 @@ public final class MainActivity extends Activity {
             }catch(Throwable e){runOnUiThread(()->{if(isFinishing()||isDestroyed()||token!=queryToken)return;querying=false;lastError=VideoApp.error(e);if(!items.isEmpty())toast(lastError);if(stale){stale=false;lastError=null;}renderResults();});}
         });
     }
+    /** Appends the page after the last loaded one; cards already on screen stay in place. */
+    private void loadMore(){
+        if(!hasResults||querying||appending||stale||displayed==null||displayed.page>=WorkshopPages.count(total))return;
+        WorkshopQuery next=displayed.copy();next.page=displayed.page+1;long token=queryToken;appending=true;renderResults();
+        app.work.submit(()->{
+            try{
+                DiscoverResults.Page hit=app.results.cached(next);DiscoverResults.Page page=hit!=null?hit:app.results.fetch(app.requireSession(),next);
+                runOnUiThread(()->{appending=false;if(isFinishing()||isDestroyed()||token!=queryToken){renderResults();return;}append(next,page);});
+            }catch(Throwable e){runOnUiThread(()->{appending=false;if(token==queryToken&&!isFinishing())toast(VideoApp.error(e));renderResults();});}
+        });
+    }
+    private void append(WorkshopQuery query,DiscoverResults.Page page){
+        Set<Long> seen=new HashSet<>();for(PublishedFileDetails item:items)seen.add(item.getPublishedfileid());
+        for(PublishedFileDetails item:page.items())if(seen.add(item.getPublishedfileid()))items.add(item);
+        displayed=query;total=page.total();renderResults();
+        if(query.page<WorkshopPages.count(total)){WorkshopQuery next=query.copy();next.page=query.page+1;app.results.prefetch(app.work,app,next);}
+    }
     private void show(WorkshopQuery query,DiscoverResults.Page page){
-        stale=false;lastError=null;hasResults=true;displayed=query;total=page.total();items.clear();items.addAll(page.items());
-        if(grid!=null)grid.setSelection(0);updateChips();renderResults();
+        firstPage=query.page;stale=false;lastError=null;hasResults=true;displayed=query;total=page.total();items.clear();items.addAll(page.items());
+        updateChips();renderResults();if(grid!=null){grid.setSelection(0);grid.post(()->grid.setSelection(0));}
         if(query.page<WorkshopPages.count(total)){WorkshopQuery next=query.copy();next.page=query.page+1;app.results.prefetch(app.work,app,next);}
     }
 
@@ -250,7 +278,7 @@ public final class MainActivity extends Activity {
             finally{app.connecting=false;app.changed();runOnUiThread(()->{refreshStatus();renderResults();});}});
     }
     private void aboutDialog(){
-        AppSheet sheet=new AppSheet(this,"WallpaperMobile","版本 0.5.10",null);
+        AppSheet sheet=new AppSheet(this,"WallpaperMobile","版本 0.5.12",null);
         TextView info=text("在手机上搜索、收藏和下载 Steam 创意工坊的壁纸，不需要电脑。\n\n· 下载的内容只保存在本应用内，不会出现在系统相册。\n· 在「已保存」中单击播放或预览；长按可设为壁纸、收藏或删除。\n· 卸载应用或清除应用数据会删除已下载的内容。\n\n开源组件及许可见安装包内 assets/THIRD_PARTY_NOTICES.txt。",13,MUTED);info.setLineSpacing(dp(5),1);sheet.field(info);
         sheet.footerButton("知道了",true,()->sheet.dialog.dismiss());sheet.show();
     }
@@ -261,7 +289,7 @@ public final class MainActivity extends Activity {
         EditText password=input("密码");password.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);password.setTypeface(Typeface.DEFAULT);password.setSaveEnabled(false);password.setImeOptions(EditorInfo.IME_ACTION_DONE|EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING);sheet.field(password);
         CheckBox remember=new CheckBox(this);remember.setText("在这台手机上保持登录");remember.setTextColor(TEXT);remember.setTextSize(14);remember.setChecked(true);remember.setMinHeight(dp(44));remember.setButtonTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked},new int[]{}},new int[]{ACCENT,MUTED}));sheet.field(remember);
         TextView error=text("",13,Ui.DANGER);error.setVisibility(View.GONE);sheet.field(error);
-        TextView note=text("密码只发送给 Steam，不会保存在手机上。需要验证时，在 Steam App 中确认或输入验证码即可。",12,Ui.SUBTLE);note.setLineSpacing(dp(3),1);sheet.field(note);
+        TextView note=text("密码只发送给 Steam，不会保存在手机上。",12,Ui.SUBTLE);note.setLineSpacing(dp(3),1);sheet.field(note);
         Runnable submit=()->{
             String u=username.getText().toString().trim(),p=password.getText().toString();
             if(u.isEmpty()||p.isEmpty()){error.setText("请输入账号名和密码。");error.setVisibility(View.VISIBLE);return;}
@@ -326,8 +354,8 @@ public final class MainActivity extends Activity {
     }
 
     private static final class CardHolder {
-        final View card;final ImageView image,heart;final TextView badge,title,info;PublishedFileDetails item;String bound;
-        CardHolder(View card,ImageView image,ImageView heart,TextView badge,TextView title,TextView info){this.card=card;this.image=image;this.heart=heart;this.badge=badge;this.title=title;this.info=info;}
+        final View card;final ImageView image,heart;final TextView badge,title,info,rating;PublishedFileDetails item;String bound;
+        CardHolder(View card,ImageView image,ImageView heart,TextView badge,TextView title,TextView info,TextView rating){this.card=card;this.image=image;this.heart=heart;this.badge=badge;this.title=title;this.info=info;this.rating=rating;}
     }
     /** Cards are recycled; each bind replaces the preview tag so late loads cannot land on a reused cover. */
     private class CardAdapter extends BaseAdapter {
@@ -344,14 +372,18 @@ public final class MainActivity extends Activity {
         ImageView heart=new ImageView(this);heart.setScaleType(ImageView.ScaleType.CENTER);heart.setBackground(Ui.round(Ui.SCRIM,dp(17)));FrameLayout.LayoutParams hp=new FrameLayout.LayoutParams(dp(34),dp(34),Gravity.TOP|Gravity.END);hp.setMargins(dp(6),dp(6),dp(6),dp(6));cover.addView(heart,hp);
         int width=(getResources().getDisplayMetrics().widthPixels-dp(48))/2;card.addView(cover,new LinearLayout.LayoutParams(-1,Math.max(dp(100),width*10/16)));
         LinearLayout meta=column();meta.setPadding(dp(12),dp(10),dp(12),dp(12));TextView title=text("",13,TEXT);Ui.cardTitle(title);title.setLineSpacing(dp(1),1);meta.addView(title);
-        TextView info=text("",11,Ui.SUBTLE);info.setSingleLine(true);info.setEllipsize(TruncateAt.END);info.setPadding(0,dp(6),0,0);meta.addView(info);card.addView(meta);
-        CardHolder holder=new CardHolder(card,image,heart,badge,title,info);card.setTag(holder);
+        TextView info=text("",11,Ui.SUBTLE);info.setSingleLine(true);info.setEllipsize(TruncateAt.END);info.setPadding(0,dp(6),0,0);meta.addView(info);
+        TextView rating=text("",11,Ui.SUBTLE);rating.setSingleLine(true);rating.setEllipsize(TruncateAt.END);rating.setPadding(0,dp(3),0,0);meta.addView(rating);card.addView(meta);
+        CardHolder holder=new CardHolder(card,image,heart,badge,title,info,rating);card.setTag(holder);
         card.setOnClickListener(v->{if(holder.item!=null)detail(holder.item);});
         heart.setOnClickListener(v->{if(holder.item==null)return;try{app.toggleFavorite(favoriteItem(holder.item));}catch(Exception e){toast(VideoApp.error(e));}bindHeart(holder);});
         return holder;
     }
     private void bind(CardHolder holder,PublishedFileDetails item){
-        holder.item=item;holder.title.setText(item.getTitle());holder.info.setText(bytes(item.getFileSize())+" · "+date(item.getTimeCreated()));
+        holder.item=item;holder.title.setText(item.getTitle());
+        int up=item.getVoteData().getVotesUp(),down=item.getVoteData().getVotesDown();
+        holder.info.setText(bytes(item.getFileSize())+" · "+date(item.getTimeCreated()));
+        holder.rating.setText(WorkshopRating.enough(up,down)?"★ "+WorkshopRating.ratingText(item.getVoteData().getScore(),up,down)+" · "+WorkshopRating.count((long)up+down)+"人":"★ -");
         String type=typeLabel(item);holder.badge.setText(type);holder.badge.setVisibility(type.isEmpty()?View.GONE:View.VISIBLE);bindHeart(holder);holder.card.setContentDescription(item.getTitle()+(type.isEmpty()?"":"，"+type));
         String url=item.getPreviewUrl();if(!url.equals(holder.bound)){holder.bound=url;holder.image.setImageDrawable(null);holder.image.setTag(url);app.previews.load(holder.image,url);}
     }
@@ -360,7 +392,8 @@ public final class MainActivity extends Activity {
     private static String typeLabel(PublishedFileDetails item){String type=typeOf(item);for(int i=0;i<TYPES.length;i++)if(TYPES[i].equals(type))return TYPE_NAMES[i];return "";}
     private static String typeName(String type){for(int i=0;i<TYPES.length;i++)if(TYPES[i].equalsIgnoreCase(type))return TYPE_NAMES[i];return "作品";}
     private JSONObject favoriteItem(PublishedFileDetails item){
-        JSONObject value=new JSONObject();VideoApp.put(value,"itemId",Long.toUnsignedString(item.getPublishedfileid()));VideoApp.put(value,"title",item.getTitle());VideoApp.put(value,"previewUrl",item.getPreviewUrl());VideoApp.put(value,"description",item.getShortDescription());VideoApp.put(value,"video",typeOf(item).equals("Video"));
+        JSONObject value=new JSONObject();VideoApp.put(value,"itemId",Long.toUnsignedString(item.getPublishedfileid()));VideoApp.put(value,"title",item.getTitle());VideoApp.put(value,"previewUrl",item.getPreviewUrl());VideoApp.put(value,"description",item.getShortDescription());VideoApp.put(value,"video",typeOf(item).equals("Video"));if(item.getCreator()!=0)VideoApp.put(value,"creator",Long.toUnsignedString(item.getCreator()));if(item.hasNumCommentsPublic())VideoApp.put(value,"comments",item.getNumCommentsPublic());
+        if(item.hasVoteData()){var vote=item.getVoteData();VideoApp.put(value,"score",(double)vote.getScore());VideoApp.put(value,"votesUp",vote.getVotesUp());VideoApp.put(value,"votesDown",vote.getVotesDown());}
         if(!typeOf(item).isEmpty())VideoApp.put(value,"type",typeOf(item));if(item.getFileSize()>0)VideoApp.put(value,"size",item.getFileSize());if(item.getTimeCreated()!=0)VideoApp.put(value,"created",Integer.toUnsignedLong(item.getTimeCreated()));return value;
     }
     private void favoriteDetail(JSONObject item){
@@ -373,6 +406,69 @@ public final class MainActivity extends Activity {
         LinkedHashSet<String> tags=new LinkedHashSet<>();for(var tag:item.getTagsList())if(!Arrays.asList(TYPES).contains(tag.getTag()))tags.add(Ui.tagName(tag.getTag()));
         showDetail(favoriteItem(item),item.getFileSize()>0?bytes(item.getFileSize()):"","发布于 "+date(item.getTimeCreated())+" · 更新于 "+date(item.getTimeUpdated()),new ArrayList<>(tags),description,typeOf(item).equals("Video"));
     }
+    /** Stars, approval and the signed-in user's own thumbs-up / thumbs-down. */
+    private LinearLayout ratingRow(JSONObject item){
+        int up=item.optInt("votesUp"),down=item.optInt("votesDown");float score=(float)item.optDouble("score",0);int stars=WorkshopRating.stars(score,up,down);
+        LinearLayout row=row();row.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout words=column();
+        if(stars>0){
+            LinearLayout line=row();line.setGravity(Gravity.CENTER_VERTICAL);TextView number=text(WorkshopRating.ratingText(score,up,down),22,TEXT);number.setTypeface(Typeface.DEFAULT_BOLD);line.addView(number);
+            ImageView bar=new ImageView(this);bar.setImageDrawable(new Ui.Stars(WorkshopRating.rating(score,up,down),dp(15)));LinearLayout.LayoutParams barLayout=new LinearLayout.LayoutParams(-2,-2);barLayout.leftMargin=dp(10);line.addView(bar,barLayout);words.addView(line);
+            words.setContentDescription("评分 "+WorkshopRating.ratingText(score,up,down)+" 分，满分 5 分，"+WorkshopRating.count((long)up+down)+" 人评价");
+        }
+        words.addView(text(WorkshopRating.enough(up,down)?WorkshopRating.count((long)up+down)+" 人评价 · "+WorkshopRating.approval(up,down)+"% 好评":"评价人数不足",12,MUTED));
+        row.addView(words,new LinearLayout.LayoutParams(0,-2,1));
+        long itemId;try{itemId=Long.parseUnsignedLong(item.optString("itemId"));}catch(NumberFormatException invalid){return row;}
+        ImageView like=Ui.iconButton(this,"thumbUp","好评",null),dislike=Ui.iconButton(this,"thumbDown","差评",null);
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(44),dp(44));row.addView(like,lp);LinearLayout.LayoutParams dislikeLayout=new LinearLayout.LayoutParams(dp(44),dp(44));dislikeLayout.leftMargin=dp(8);row.addView(dislike,dislikeLayout);
+        Boolean[] mine={null};
+        Runnable paint=()->{like.setImageDrawable(new Ui.Icon(Boolean.TRUE.equals(mine[0])?"thumbUpFilled":"thumbUp",Boolean.TRUE.equals(mine[0])?ACCENT:TEXT,dp(20)));dislike.setImageDrawable(new Ui.Icon(Boolean.FALSE.equals(mine[0])?"thumbDownFilled":"thumbDown",Boolean.FALSE.equals(mine[0])?Ui.DANGER:TEXT,dp(20)));
+            like.setContentDescription(Boolean.TRUE.equals(mine[0])?"已好评":"好评");dislike.setContentDescription(Boolean.FALSE.equals(mine[0])?"已差评":"差评");};
+        paint.run();
+        boolean signedIn=app.session!=null&&app.session.isAuthenticated()&&!app.guest;
+        if(signedIn)app.work.submit(()->{try{Boolean vote=app.session.myVote(itemId);runOnUiThread(()->{mine[0]=vote;paint.run();});}catch(Exception ignored){}});
+        java.util.function.Consumer<Boolean> cast=upVote->{
+            if(!(app.session!=null&&app.session.isAuthenticated()&&!app.guest)){toast("评价需要登录 Steam 账号。");loginDialog();return;}
+            if(upVote.equals(mine[0]))return;Boolean previous=mine[0];mine[0]=upVote;paint.run();
+            app.work.submit(()->{try{app.session.vote(itemId,upVote);toast(upVote?"已好评":"已差评");}catch(Exception e){runOnUiThread(()->{mine[0]=previous;paint.run();});toast(VideoApp.error(e));}});
+        };
+        like.setOnClickListener(v->cast.accept(true));dislike.setOnClickListener(v->cast.accept(false));
+        return row;
+    }
+    /** Read-only public comments, newest first, loaded 20 at a time. */
+    private void commentsSheet(JSONObject item){
+        long creator,itemId;try{creator=Long.parseUnsignedLong(item.optString("creator"));itemId=Long.parseUnsignedLong(item.optString("itemId"));}catch(NumberFormatException invalid){return;}
+        AppSheet sheet=new AppSheet(this,"评论",item.optString("title"),null);LinearLayout list=column();sheet.field(list);
+        TextView status=text("正在加载…",13,MUTED);status.setPadding(0,dp(8),0,dp(8));sheet.field(status);
+        Button more=Ui.button(this,"加载更多",Ui.Kind.GHOST,null);more.setVisibility(View.GONE);sheet.field(more);
+        Map<Long,String> names=new HashMap<>();int[] next={0};Runnable[] load=new Runnable[1];
+        load[0]=()->{more.setEnabled(false);status.setText("正在加载…");status.setVisibility(View.VISIBLE);int start=next[0];
+            app.work.submit(()->{
+                try{
+                    SteamSession session=app.requireSession();WorkshopComments.Page page=session.comments(creator,itemId,start,20);
+                    Set<Long> unknown=new HashSet<>();for(WorkshopComments.Comment c:page.comments)if(c.name==null&&c.author!=0&&!names.containsKey(c.author))unknown.add(c.author);
+                    Map<Long,String> found;try{found=session.personaNames(unknown);}catch(Exception ignored){found=Map.of();}
+                    Map<Long,String> resolved=found;
+                    runOnUiThread(()->{
+                        if(!sheet.dialog.isShowing())return;names.putAll(resolved);
+                        for(WorkshopComments.Comment c:page.comments)list.addView(commentView(c,c.name!=null&&!c.name.isEmpty()?c.name:names.getOrDefault(c.author,"Steam 用户")));
+                        next[0]=page.start+page.comments.size();boolean empty=list.getChildCount()==0;
+                        status.setText(empty?"还没有评论":"");status.setVisibility(empty?View.VISIBLE:View.GONE);
+                        if(page.total>0)sheet.detail(page.total+" 条评论");
+                        more.setVisibility(page.more()&&!page.comments.isEmpty()?View.VISIBLE:View.GONE);more.setEnabled(true);
+                    });
+                }catch(Exception e){runOnUiThread(()->{status.setText("评论加载失败："+VideoApp.error(e));more.setText("重试");more.setVisibility(View.VISIBLE);more.setEnabled(true);});}
+            });
+        };
+        more.setOnClickListener(v->{more.setText("加载更多");load[0].run();});sheet.show();load[0].run();
+    }
+    private View commentView(WorkshopComments.Comment comment,String author){
+        LinearLayout box=column();box.setPadding(0,dp(10),0,dp(12));
+        LinearLayout head=row();head.setGravity(Gravity.CENTER_VERTICAL);TextView name=text(author,13,TEXT);name.setTypeface(Typeface.DEFAULT_BOLD);name.setSingleLine(true);name.setEllipsize(TruncateAt.END);head.addView(name,new LinearLayout.LayoutParams(0,-2,1));
+        TextView when=text(Ui.date((int)comment.time)+(comment.upvotes>0?" · 赞 "+comment.upvotes:""),11,Ui.SUBTLE);LinearLayout.LayoutParams whenLayout=new LinearLayout.LayoutParams(-2,-2);whenLayout.leftMargin=dp(8);head.addView(when,whenLayout);box.addView(head);
+        TextView body=text(comment.text,14,MUTED);body.setLineSpacing(dp(3),1);body.setTextIsSelectable(true);body.setPadding(0,dp(5),0,0);box.addView(body);
+        LinearLayout wrap=column();wrap.addView(box);View divider=new View(this);divider.setBackgroundColor(Ui.LINE);wrap.addView(divider,new LinearLayout.LayoutParams(-1,1));return wrap;
+    }
     private JSONObject existingJob(String itemId){for(JSONObject job:app.jobs())if(job.optString("itemId").equals(itemId))return job;return null;}
     private void showDetail(JSONObject item,String size,String dates,List<String> tags,String description,boolean video){
         String type=item.optString("type",video?"Video":"Scene");boolean supported=type.equalsIgnoreCase("Video")||type.equalsIgnoreCase("Scene")||type.equalsIgnoreCase("Image");
@@ -380,13 +476,15 @@ public final class MainActivity extends Activity {
         ImageView image=new PreviewImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);image.setBackground(Ui.round(0xff1b2634,dp(16)));image.setClipToOutline(true);image.setContentDescription(item.optString("title")+"的预览");
         int coverHeight=Math.min(dp(240),(getResources().getDisplayMetrics().widthPixels-dp(36))*9/16);LinearLayout cover=column();cover.addView(image,new LinearLayout.LayoutParams(-1,coverHeight));sheet.field(cover);app.previews.load(image,item.optString("previewUrl"));
         if(!dates.isEmpty())sheet.field(text(dates,12,Ui.SUBTLE));
+        if(item.has("votesUp"))sheet.field(ratingRow(item));
+        if(!item.optString("creator").isEmpty()){Button comments=Ui.button(this,item.optInt("comments")>0?"查看评论（"+WorkshopRating.count(item.optInt("comments"))+"）":"查看评论",Ui.Kind.SECONDARY,()->commentsSheet(item));comments.setMinHeight(dp(46));comments.setMinimumHeight(dp(46));sheet.field(comments);}
         if(!tags.isEmpty()){Ui.Flow flow=new Ui.Flow(this,dp(6));for(String tag:tags){TextView chip=text(tag,12,MUTED);chip.setPadding(dp(10),dp(5),dp(10),dp(5));chip.setBackground(Ui.outlined(Color.TRANSPARENT,Ui.LINE,dp(10),dp(1)));flow.addView(chip);}sheet.field(flow);}
         String body=description==null||description.isBlank()?"作者没有提供介绍。":description.trim();
         TextView info=text(body,14,MUTED);info.setLineSpacing(dp(5),1);info.setTextIsSelectable(true);sheet.field(info);
         if(body.length()>160||body.split("\n").length>6){info.setMaxLines(6);info.setEllipsize(TruncateAt.END);Button more=Ui.button(this,"展开全文",Ui.Kind.GHOST,null);more.setPadding(0,0,0,0);more.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);
             more.setOnClickListener(v->{boolean expand=info.getMaxLines()!=Integer.MAX_VALUE;info.setMaxLines(expand?Integer.MAX_VALUE:6);more.setText(expand?"收起":"展开全文");});sheet.field(more);}
         if(!supported)sheet.field(Ui.callout(this,"info","这个作品需要网页或应用运行环境，手机暂不支持。",Ui.DANGER));
-        else if(!video)sheet.field(Ui.callout(this,"info","下载后会自动转换成手机可用的壁纸。部分原作特效可能无法保留；无法转换时不会保存。",ACCENT));
+        else if(!video)sheet.field(Ui.callout(this,"info","下载后自动转换为手机壁纸，部分特效可能无法保留。",ACCENT));
         String itemId=item.optString("itemId");
         ImageView favorite=sheet.footerIcon("heart","收藏",null);
         Runnable updateFavorite=()->{boolean selected=app.isFavorite(itemId);favorite.setImageDrawable(new Ui.Icon(selected?"heartFilled":"heart",selected?ACCENT:TEXT,dp(20)));favorite.setContentDescription(selected?"取消收藏":"收藏");};

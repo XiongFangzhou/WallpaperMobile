@@ -55,8 +55,8 @@ public class UiPreviews {
         app().getSharedPreferences("video",0).edit().putString("jobs",jobs.toString()).putString("favorites",favorites.toString()).commit();
     }
     private static PublishedFileDetails item(int i){
-        PublishedFileDetails.Builder b=PublishedFileDetails.newBuilder().setResult(1).setConsumerAppid(431960).setPublishedfileid(3000000000L+i).setTitle(TITLES[i]).setPreviewUrl(url(i))
-            .setFileSize((i*37+12)*1024L*1024).setTimeCreated(1760000000+i*86400).setTimeUpdated(1762000000).setShortDescription("动态壁纸示例描述。").setFileDescription("一段较长的作品介绍，用于检查详情页的排版与可读性。\n\n支持 4K 分辨率，循环无缝衔接。");
+        PublishedFileDetails.Builder b=PublishedFileDetails.newBuilder().setResult(1).setConsumerAppid(431960).setPublishedfileid(3000000000L+i).setCreator(76561198000000000L+i).setTitle(TITLES[i]).setPreviewUrl(url(i))
+            .setFileSize((i*37+12)*1024L*1024).setTimeCreated(1760000000+i*86400).setTimeUpdated(1762000000).setShortDescription("动态壁纸示例描述。").setVoteData(PublishedFileDetails.VoteData.newBuilder().setScore(.9f-i*.08f).setVotesUp(12000-i*1400).setVotesDown(300+i*90)).setFileDescription("一段较长的作品介绍，用于检查详情页的排版与可读性。\n\n支持 4K 分辨率，循环无缝衔接。");
         b.addTags(PublishedFileDetails.Tag.newBuilder().setTag(TYPES[i]));b.addTags(PublishedFileDetails.Tag.newBuilder().setTag("Anime"));b.addTags(PublishedFileDetails.Tag.newBuilder().setTag("3840 x 2160"));return b.build();
     }
 
@@ -117,7 +117,7 @@ public class UiPreviews {
             Activity a=controller.get();ScrollView scroll=new ScrollView(a);scroll.setBackgroundColor(Ui.BG);EffectPanel panel=new EffectPanel(a,null,true,"video",ignored->{});panel.setPadding(48,48,48,48);scroll.addView(panel);a.setContentView(scroll);
             idle();panel.measure(View.MeasureSpec.makeMeasureSpec(W,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));panel.layout(0,0,W,panel.getMeasuredHeight());
             Bitmap image=Bitmap.createBitmap(W,Math.min(6000,panel.getMeasuredHeight()),Bitmap.Config.ARGB_8888);Canvas c=new Canvas(image);c.drawColor(Ui.BG);panel.draw(c);write(image,"18-video-effects");
-            EffectPanel scene=new EffectPanel(a,null,true,"scene",ignored->{});scene.setPadding(48,48,48,48);scene.measure(View.MeasureSpec.makeMeasureSpec(W,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));scene.layout(0,0,W,scene.getMeasuredHeight());
+            EffectPanel scene=new EffectPanel(a,null,true,"scene",ignored->{});scene.sceneProperties(new JSONObject("{\"beijing\":{\"type\":\"combo\",\"value\":\"0\",\"label\":\"背景样式\",\"order\":1,\"options\":[[\"背景\",\"0\"],[\"纯色\",\"1\"]]},\"fg\":{\"type\":\"bool\",\"value\":false,\"label\":\"镜头前景\",\"order\":2},\"trail\":{\"type\":\"bool\",\"value\":true,\"label\":\"鼠标尾迹\",\"order\":3}}"));scene.setPadding(48,48,48,48);scene.measure(View.MeasureSpec.makeMeasureSpec(W,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));scene.layout(0,0,W,scene.getMeasuredHeight());
             image=Bitmap.createBitmap(W,Math.min(8000,scene.getMeasuredHeight()),Bitmap.Config.ARGB_8888);c=new Canvas(image);c.drawColor(Ui.BG);scene.draw(c);write(image,"19-scene-effects");
         }
     }
