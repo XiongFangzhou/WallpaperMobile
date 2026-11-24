@@ -50,9 +50,9 @@ public final class ContentArchive implements AutoCloseable {
     public static long transfer(InputStream in,OutputStream out,long max)throws IOException {long total=0;byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1){if(Thread.currentThread().isInterrupted())throw new InterruptedIOException("解析已停止");total+=n;if(total>max)throw new IOException("资源超过允许大小");out.write(b,0,n);}return total;}
     public static byte[] lz4(byte[] src,int size)throws IOException {
         if(size<0||size>MAX_BLOCK)throw new IOException("解压块过大");byte[] dst=new byte[size];int i=0,o=0;
-        while(i<src.length){int token=src[i++]&255,n=token>>>4;if(n==15){int x;do{if(i>=src.length)throw new IOException("LZ4 文本截断");x=src[i++]&255;n+=x;}while(x==255);}
+        while(i<src.length){int token=src[i++]&255,n=token>>>4;if(n==15){int x;do{if(i>=src.length)throw new IOException("LZ4 文本截断");x=src[i++]&255;n+=x;if(n>MAX_BLOCK)throw new IOException("LZ4 长度无效");}while(x==255);}
             if(n>src.length-i||n>size-o)throw new IOException("LZ4 文本越界");System.arraycopy(src,i,dst,o,n);i+=n;o+=n;if(i==src.length)break;
-            if(i+2>src.length)throw new IOException("LZ4 偏移截断");int offset=(src[i++]&255)|((src[i++]&255)<<8);if(offset<=0||offset>o)throw new IOException("LZ4 偏移无效");n=token&15;if(n==15){int x;do{if(i>=src.length)throw new IOException("LZ4 匹配截断");x=src[i++]&255;n+=x;}while(x==255);}n+=4;if(n>size-o)throw new IOException("LZ4 匹配越界");for(int k=0;k<n;k++){dst[o]=dst[o-offset];o++;}
+            if(i+2>src.length)throw new IOException("LZ4 偏移截断");int offset=(src[i++]&255)|((src[i++]&255)<<8);if(offset<=0||offset>o)throw new IOException("LZ4 偏移无效");n=token&15;if(n==15){int x;do{if(i>=src.length)throw new IOException("LZ4 匹配截断");x=src[i++]&255;n+=x;if(n>MAX_BLOCK)throw new IOException("LZ4 长度无效");}while(x==255);}n+=4;if(n>size-o)throw new IOException("LZ4 匹配越界");for(int k=0;k<n;k++){dst[o]=dst[o-offset];o++;}
         }if(o!=size)throw new IOException("LZ4 长度不匹配");return dst;
     }
     public void close(){if(zip!=null)try{zip.close();}catch(Exception ignored){}if(file!=null)try{file.close();}catch(Exception ignored){}}

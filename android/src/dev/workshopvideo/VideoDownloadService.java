@@ -18,6 +18,7 @@ public final class VideoDownloadService extends Service {
     private VideoApp app;
     private NotificationManager notifications;
     private volatile boolean timedOut=false;
+    private volatile int lastStart;
     public static final int NOTICE=7;
     @Override public void onCreate() {
         super.onCreate();app=(VideoApp)getApplication();notifications=getSystemService(NotificationManager.class);
@@ -33,11 +34,11 @@ public final class VideoDownloadService extends Service {
         return n.build();
     }
     @Override public int onStartCommand(Intent intent,int flags,int startId) {
-        String id=intent==null?null:intent.getStringExtra("id");
+        lastStart=startId;String id=intent==null?null:intent.getStringExtra("id");
         if(id==null||!id.matches("[0-9a-f]{32}")){if(pending.get()==0)stopSelfResult(startId);return START_NOT_STICKY;}
         if(PAUSE.equals(intent.getAction())||CANCEL.equals(intent.getAction())){stopDownload(id,CANCEL.equals(intent.getAction()));return START_NOT_STICKY;}
         startForeground(NOTICE,notification("准备下载…",0,0),ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
-        if(!app.enqueued.add(id))return START_NOT_STICKY;
+        if(!app.enqueued.add(id)){stopIfIdle();return START_NOT_STICKY;}
         pending.incrementAndGet();
         try{boolean submitted=tasks.submit(id,new DownloadTasks.Work(){
             public void run(DownloadTasks.Token token){runDownload(id,token);}
@@ -62,7 +63,7 @@ public final class VideoDownloadService extends Service {
         try{synchronized(app){app.enqueued.remove(id);if(failure!=null&&!app.job(id).optString("state").equals("saved")){app.change(id,"state","error");app.change(id,"error",VideoApp.error(failure));}settleStopped(id,stop);}}
         finally{pending.decrementAndGet();app.changed();stopIfIdle();}
     }
-    private void stopIfIdle(){new Handler(Looper.getMainLooper()).post(()->{if(pending.get()==0){stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();}});}
+    private void stopIfIdle(){new Handler(Looper.getMainLooper()).post(()->{if(pending.get()==0&&stopSelfResult(lastStart))stopForeground(STOP_FOREGROUND_REMOVE);});}
 
     private boolean cancelled(String id) {
         return timedOut || Thread.currentThread().isInterrupted() || app.job(id).optBoolean("cancelRequested");

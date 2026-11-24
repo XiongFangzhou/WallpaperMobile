@@ -1,15 +1,52 @@
 package dev.workshopvideo.core;
 import java.io.*;import java.nio.*;import java.nio.charset.StandardCharsets;
-/** WE TEX subset: embedded JPEG/PNG and raw RGBA/RGB/R8/RG88/DXT1/3/5. */
+/** WE TEX subset: embedded JPEG/PNG and raw RGBA/RGB/R8/RG88/DXT1/3/5, plus sprite-sheet frame tables. */
 public final class TexturePixels {
  public record Image(int width,int height,int imageWidth,int imageHeight,int format,byte[] bytes){}
+ /** One animation frame: region of the decoded image in 0..1 coordinates (v grows downwards) and its duration. */
+ public record Frame(float u0,float v0,float u1,float v1,float seconds){}
  public static Image read(byte[] src)throws IOException {return read(src,2048);}
- public static Image read(byte[] src,int edge)throws IOException {
+ public static Image read(byte[] src,int edge)throws IOException {return read(src,edge,false);}
+ /** Sprite-sheet image; call only after {@link #frames} accepted the frame table, so animation is never frozen silently. */
+ public static Image readSprite(byte[] src,int edge)throws IOException {return read(src,edge,true);}
+ public static boolean sprite(byte[] src){return src.length>40&&flags(src)>=0&&(flags(src)&4)!=0;}
+ public static boolean video(byte[] src){return src.length>40&&flags(src)>=0&&(flags(src)&32)!=0;}
+ private static int flags(byte[] src){try{ByteBuffer b=ByteBuffer.wrap(src).order(ByteOrder.LITTLE_ENDIAN);if(!string(b).equals("TEXV0005")||!string(b).equals("TEXI0001"))return -1;b.getInt();return b.getInt();}catch(Exception e){return -1;}}
+ /** Frame table of a single-image sprite sheet, normalized to the image area. Empty when the texture is not animated. */
+ public static java.util.List<Frame> frames(byte[] src)throws IOException {
+  try{
+   ByteBuffer b=ByteBuffer.wrap(src).order(ByteOrder.LITTLE_ENDIAN);if(!string(b).equals("TEXV0005")||!string(b).equals("TEXI0001"))throw new IOException("不支持的 TEX 头部");
+   b.getInt();int flags=b.getInt();b.getInt();b.getInt();int iw=b.getInt(),ih=b.getInt();b.getInt();String version=string(b);int count=b.getInt();
+   if((flags&4)==0)return java.util.List.of();if(count!=1)throw new IOException("当前只支持单张图集的帧动画");if(iw<1||ih<1)throw new IOException("帧动画尺寸无效");
+   int v=version.equals("TEXB0001")?1:version.equals("TEXB0002")?2:version.equals("TEXB0003")?3:version.equals("TEXB0004")?4:0;if(v==0)throw new IOException("不支持的 TEX 容器");
+   if(v==3)b.getInt();if(v==4){b.getInt();if(b.getInt()!=0)throw new IOException("视频纹理不是帧动画");}
+   int mips=b.getInt();if(mips<1||mips>32)throw new IOException("TEX mip 数量无效");
+   for(int mip=0;mip<mips;mip++){b.getInt();b.getInt();if(v>=2){b.getInt();b.getInt();}int n=b.getInt();if(n<0||n>b.remaining())throw new IOException("TEX 数据越界");b.position(b.position()+n);}
+   String table=string(b);boolean whole=table.equals("TEXS0001");if(!whole&&!table.equals("TEXS0002")&&!table.equals("TEXS0003"))throw new IOException("不支持的帧动画表："+table);
+   int frames=b.getInt();if(frames<1||frames>1024)throw new IOException("帧数量无效");if(table.equals("TEXS0003")){b.getInt();b.getInt();}
+   java.util.ArrayList<Frame> result=new java.util.ArrayList<>(frames);
+   for(int i=0;i<frames;i++){
+    int image=b.getInt();float seconds=b.getFloat();float x,y,w,wy,hx,h;
+    if(whole){x=b.getInt();y=b.getInt();w=b.getInt();wy=b.getInt();hx=b.getInt();h=b.getInt();}else{x=b.getFloat();y=b.getFloat();w=b.getFloat();wy=b.getFloat();hx=b.getFloat();h=b.getFloat();}
+    if(image!=0)throw new IOException("帧引用了不存在的图集");
+    if(Math.abs(wy)>.01f||Math.abs(hx)>.01f)throw new IOException("旋转帧尚不支持");
+    if(!(seconds>0)||seconds>60||!(w>0)||!(h>0)||x<-.5f||y<-.5f||x+w>iw+.5f||y+h>ih+.5f)throw new IOException("帧区域或时长无效");
+    result.add(new Frame(x/iw,y/ih,Math.min(1,(x+w)/iw),Math.min(1,(y+h)/ih),seconds));
+   }
+   return java.util.List.copyOf(result);
+  }catch(BufferUnderflowException|IllegalArgumentException e){throw new IOException("帧动画表截断",e);}
+ }
+ /** Frame shown at the given time; the animation loops over the summed durations. */
+ public static int frameAt(java.util.List<Frame> frames,double seconds){
+  if(frames.size()<2)return 0;double total=0;for(Frame f:frames)total+=f.seconds();if(!(total>0)||!Double.isFinite(seconds))return 0;
+  double t=seconds%total;if(t<0)t+=total;for(int i=0;i<frames.size();i++){t-=frames.get(i).seconds();if(t<0)return i;}return frames.size()-1;
+ }
+ private static Image read(byte[] src,int edge,boolean allowSprite)throws IOException {
   try{
    if(edge<1||edge>4096)throw new IOException("纹理解码尺寸无效");
    ByteBuffer b=ByteBuffer.wrap(src).order(ByteOrder.LITTLE_ENDIAN);if(!string(b).equals("TEXV0005")||!string(b).equals("TEXI0001"))throw new IOException("不支持的 TEX 头部");
    int format=b.getInt(),flags=b.getInt(),tw=b.getInt(),th=b.getInt(),iw=b.getInt(),ih=b.getInt();b.getInt();String version=string(b);int count=b.getInt();
-   if((flags&4)!=0)throw new IOException("当前尚不支持 TEX 精灵动画");if(count!=1)throw new IOException("当前尚不支持多图 TEX");
+   if((flags&32)!=0)throw new IOException("场景包含视频纹理，当前场景路径尚不支持");if((flags&4)!=0&&!allowSprite)throw new IOException("当前尚不支持 TEX 精灵动画");if(count!=1)throw new IOException("当前尚不支持多图 TEX");
    int v=version.equals("TEXB0001")?1:version.equals("TEXB0002")?2:version.equals("TEXB0003")?3:version.equals("TEXB0004")?4:0;if(v==0)throw new IOException("不支持的 TEX 容器");
    if(v==3)b.getInt();if(v==4){int free=b.getInt(),video=b.getInt();if(free==-1&&video==1)throw new IOException("场景包含视频纹理，当前场景路径尚不支持");if(video!=0)throw new IOException("TEX 视频标记无效");v=3;}
    int mips=b.getInt();if(mips<1||mips>32)throw new IOException("TEX mip 数量无效");int topW=0,topH=0;Image chosen=null;

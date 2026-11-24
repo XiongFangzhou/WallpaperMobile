@@ -87,8 +87,10 @@ public final class SteamSession implements AutoCloseable {
             events.status("Steam 会话已退出："+c.getResult());
         }));
         pump = new Thread(() -> {
-            try { while(running) callbacks.runWaitCallbacks(250L); }
-            catch(Throwable e) { authenticated=false; if(running) events.status("Steam 连接异常，请重试连接"); }
+            while(running) {
+                try { callbacks.runWaitCallbacks(250L); }
+                catch(Throwable e) { if(!running) return; try { events.status("Steam 回调处理异常，已继续监听"); Thread.sleep(250L); } catch(Throwable ignored) { if(Thread.currentThread().isInterrupted()) return; } }
+            }
         }, "steam-callbacks");
         pump.setDaemon(true); pump.start();
     }
@@ -106,8 +108,8 @@ public final class SteamSession implements AutoCloseable {
             if(lastHost!=null)candidates.add(lastHost);
             java.util.Collections.addAll(candidates,bootstrap);
             List<String> hosts=new ArrayList<>(candidates);
-            for(int attempt=0;attempt<3;attempt++) {
-                events.status("正在连接 Steam… ("+(attempt+1)+"/3)");
+            for(int attempt=0;attempt<hosts.size();attempt++) {
+                events.status("正在连接 Steam… ("+(attempt+1)+"/"+hosts.size()+")");
                 connected=new CompletableFuture<>();
                 try {
                     // Official Steam nodes, independently TLS-verified on 2026-11-21.

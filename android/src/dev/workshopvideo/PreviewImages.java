@@ -22,11 +22,14 @@ public final class PreviewImages {
     private final ExecutorService workers=Executors.newFixedThreadPool(3);
     private final ConcurrentHashMap<String,Object> locks=new ConcurrentHashMap<>();
     private final LruCache<String,byte[]> cache=new LruCache<String,byte[]>(12*1024*1024){@Override protected int sizeOf(String key,byte[] bytes){return bytes.length;}};
+    // Decoded still previews: scrolling back or reopening a sheet shows them without a placeholder flash.
+    private final LruCache<String,Bitmap> decoded=new LruCache<String,Bitmap>(32*1024*1024){@Override protected int sizeOf(String key,Bitmap bitmap){return bitmap.getAllocationByteCount();}};
     public PreviewImages(File root){directory=new File(root,"preview-media");directory.mkdirs();}
     public void load(ImageView view,String url){load(view,url,null);}
     public void load(ImageView view,String url,Runnable fallback){
         if(url==null||url.isEmpty()){if(fallback!=null)fallback.run();return;}
-        view.setTag(url);WeakReference<ImageView> target=new WeakReference<>(view);
+        view.setTag(url);Bitmap ready=decoded.get(url);if(ready!=null){view.setImageBitmap(ready);return;}
+        WeakReference<ImageView> target=new WeakReference<>(view);
         workers.submit(()->{
             Drawable drawable=null;
             try {
@@ -37,6 +40,7 @@ public final class PreviewImages {
                     float scale=Math.min(1f,720f/Math.max(width,height));decoder.setTargetSize(Math.max(1,Math.round(width*scale)),Math.max(1,Math.round(height*scale)));
                 });
                 if(drawable instanceof AnimatedImageDrawable)((AnimatedImageDrawable)drawable).setRepeatCount(AnimatedImageDrawable.REPEAT_INFINITE);
+                else if(drawable instanceof BitmapDrawable still)decoded.put(url,still.getBitmap());
             }catch(Exception|OutOfMemoryError ignored){}
             Drawable result=drawable;
             main.post(()->{ImageView image=target.get();if(image==null||!url.equals(image.getTag()))return;if(result!=null)image.setImageDrawable(result);else if(fallback!=null)fallback.run();});

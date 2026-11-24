@@ -14,13 +14,14 @@ final class SceneAdapter {
   final WallpaperContent.Scene scene=new WallpaperContent.Scene();
   final LinkedHashMap<String,Integer> skipped=new LinkedHashMap<>();
   final LinkedHashSet<String> effects=new LinkedHashSet<>();
-  int objects,images,particles,texts,sounds,models,scripts,bindings,xrays;
+  int objects,images,particles,texts,sounds,models,scripts,bindings,xrays,animations;
   String error="";
   void skip(String reason){skipped.put(reason,skipped.getOrDefault(reason,0)+1);}
   boolean usable(){return !scene.layers.isEmpty()&&error.isEmpty();}
   String describe(){
    StringBuilder s=new StringBuilder("原作：").append(objects).append(" 个对象，图片 ").append(images).append("、粒子 ").append(particles).append("、文字 ").append(texts).append("、音频 ").append(sounds).append("、模型 ").append(models).append("。\n");
    s.append("实际解码可保留：").append(scene.layers.size()).append(" 个图片图层（").append(scene.width).append(" × ").append(scene.height).append("）。\n");
+   if(animations>0)s.append("保留帧动画：").append(animations).append(" 个动图图层，按原作的帧时长循环播放。\n");
    if(xrays>0)s.append("支持触摸 X-ray：").append(xrays).append(" 层；采用手机圆形揭示区域，保留作者的第二张图片。\n");
    if(!effects.isEmpty())s.append("不保留作者特效：").append(String.join("、",effects)).append("。\n");
    if(scripts>0||bindings>0)s.append("脚本 ").append(scripts).append(" 处、属性绑定 ").append(bindings).append(" 处；只取已存默认值，不执行脚本。\n");
@@ -76,12 +77,15 @@ final class SceneAdapter {
      // Blend modes other than normal need a compositor; don't render additive masks as opaque images.
      if(pass.optInt("blending",0)>1||o.optInt("colorBlendMode",0)!=0)throw new IOException("非标准混合模式");
      JSONArray textures=pass.optJSONArray("textures");if(textures==null||textures.length()!=1||!(textures.opt(0) instanceof String))throw new IOException("没有可解码的基础图片纹理");
-     String texture=textures.getString(0);bitmap=WallpaperContent.bitmap(a.read(WallpaperContent.asset(a,texture),32*1024*1024));
+     String texture=textures.getString(0);byte[] raw=a.read(WallpaperContent.asset(a,texture),32*1024*1024);
+     if(dev.workshopvideo.core.TexturePixels.video(raw))throw new IOException("视频纹理图层尚不支持");
+     java.util.List<dev.workshopvideo.core.TexturePixels.Frame> frames=dev.workshopvideo.core.TexturePixels.sprite(raw)?dev.workshopvideo.core.TexturePixels.frames(raw):java.util.List.of();
+     bitmap=WallpaperContent.bitmap(raw,!frames.isEmpty());raw=null;
      if(pixels+(long)bitmap.getWidth()*bitmap.getHeight()>16L*1024*1024)throw new IOException("超过 1600 万像素内存预算");
      float[] pos=WallpaperContent.vector(o.opt("origin"),r.scene.width/2f,r.scene.height/2f),sz=WallpaperContent.vector(o.opt("size"),bitmap.getWidth(),bitmap.getHeight()),scale=WallpaperContent.vector(o.opt("scale"),1,1),angles=WallpaperContent.vector(o.opt("angles"),0,0,0),depth=WallpaperContent.vector(o.opt("parallaxDepth"),1,1);
      if(pos.length<2||sz.length<2||scale.length<2||angles.length<3)throw new IOException("不完整的图层变换");
      if(scale[0]<=0||scale[1]<=0||Math.abs(angles[0])>.001||Math.abs(angles[1])>.001)throw new IOException("镜像或 3D 旋转");
-     WallpaperContent.Layer layer=new WallpaperContent.Layer();layer.name=o.optString("name","图层 "+(i+1));layer.w=sz[0]*scale[0];layer.h=sz[1]*scale[1];layer.x=pos[0]-layer.w/2;layer.y=r.scene.height-pos[1]-layer.h/2;layer.rotation=-(float)Math.toDegrees(angles[2]);layer.depth=Math.max(-2,Math.min(2,depth[0]));layer.alpha=(float)Math.max(0,Math.min(1,number(o.opt("alpha"),1)));
+     WallpaperContent.Layer layer=new WallpaperContent.Layer();layer.name=o.optString("name","图层 "+(i+1));layer.w=sz[0]*scale[0];layer.h=sz[1]*scale[1];layer.x=pos[0]-layer.w/2;layer.y=r.scene.height-pos[1]-layer.h/2;layer.rotation=-(float)Math.toDegrees(angles[2]);layer.depth=Math.max(-2,Math.min(2,depth[0]));layer.alpha=(float)Math.max(0,Math.min(1,number(o.opt("alpha"),1)));layer.frames=frames;
      if(!Float.isFinite(layer.x)||!Float.isFinite(layer.y)||!Float.isFinite(layer.w)||!Float.isFinite(layer.h)||!Float.isFinite(layer.rotation)||layer.w<=0||layer.h<=0||layer.w>65536||layer.h>65536||Math.abs(layer.x)>65536||Math.abs(layer.y)>65536)throw new IOException("图层尺寸或位置无效");
      JSONArray objectEffects=o.optJSONArray("effects");if(objectEffects!=null)for(int e=0;e<objectEffects.length();e++){
       JSONObject effect=objectEffects.optJSONObject(e);if(effect==null||!visible(effect)||!effect.optString("file").toLowerCase(Locale.ROOT).contains("xray"))continue;
@@ -98,7 +102,7 @@ final class SceneAdapter {
        layer.reveal=second;pixels+=(long)second.getWidth()*second.getHeight();r.xrays++;r.effects.remove("xray");
       }catch(Exception failure){if(layer.reveal!=null){layer.reveal.recycle();layer.reveal=null;}r.error="X-ray 无法适配："+failure.getMessage();}
      }
-     layer.bitmap=bitmap;bitmap=null;pixels+=(long)layer.bitmap.getWidth()*layer.bitmap.getHeight();r.scene.layers.add(layer);
+     layer.bitmap=bitmap;bitmap=null;pixels+=(long)layer.bitmap.getWidth()*layer.bitmap.getHeight();r.scene.layers.add(layer);if(layer.frames.size()>1)r.animations++;
     }catch(InterruptedIOException stop){throw stop;}catch(Exception e){r.skip(e.getMessage()==null?"图片无法解码":e.getMessage());}finally{if(bitmap!=null)bitmap.recycle();}
    }
    if(r.scene.layers.isEmpty()&&r.error.isEmpty())r.error="未找到可安全恢复的基础图片；不会使用封面代替场景";
@@ -110,7 +114,7 @@ final class SceneAdapter {
   JSONObject root=new JSONObject().put("format","WallpaperMobileScene/1").put("width",report.scene.width).put("height",report.scene.height).put("adapted",true).put("adaptation",report.describe());
   JSONObject effects=EffectOptions.normalize(null);effects.put("gyro",true);effects.put("touch",true);root.put("effects",effects);JSONArray layers=new JSONArray();
   boolean done=false;try{
-   try(ZipOutputStream zip=new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(target)))){int index=0;for(WallpaperContent.Layer l:report.scene.layers){if(Thread.currentThread().isInterrupted())throw new InterruptedIOException("适配已暂停");String name="layers/"+(index++)+".png";zip.putNextEntry(new ZipEntry(name));if(!l.bitmap.compress(Bitmap.CompressFormat.PNG,100,zip))throw new IOException("无法保存图层");zip.closeEntry();JSONObject layer=new JSONObject().put("file",name).put("name",l.name).put("x",l.x).put("y",l.y).put("width",l.w).put("height",l.h).put("rotation",l.rotation).put("depth",l.depth).put("opacity",l.alpha);if(l.reveal!=null){String reveal="layers/xray-"+index+".png";zip.putNextEntry(new ZipEntry(reveal));if(!l.reveal.compress(Bitmap.CompressFormat.PNG,100,zip))throw new IOException("无法保存 X-ray 图层");zip.closeEntry();layer.put("xrayFile",reveal).put("xraySize",l.revealSize);}layers.put(layer);}root.put("layers",layers);zip.putNextEntry(new ZipEntry("wallpaper-mobile.json"));zip.write(root.toString().getBytes(StandardCharsets.UTF_8));zip.closeEntry();}
+   try(ZipOutputStream zip=new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(target)))){int index=0;for(WallpaperContent.Layer l:report.scene.layers){if(Thread.currentThread().isInterrupted())throw new InterruptedIOException("适配已暂停");String name="layers/"+(index++)+".png";zip.putNextEntry(new ZipEntry(name));if(!l.bitmap.compress(Bitmap.CompressFormat.PNG,100,zip))throw new IOException("无法保存图层");zip.closeEntry();JSONObject layer=new JSONObject().put("file",name).put("name",l.name).put("x",l.x).put("y",l.y).put("width",l.w).put("height",l.h).put("rotation",l.rotation).put("depth",l.depth).put("opacity",l.alpha);if(l.frames.size()>1){JSONArray frames=new JSONArray();for(var f:l.frames)frames.put(new JSONArray().put(f.u0()).put(f.v0()).put(f.u1()).put(f.v1()).put(f.seconds()));layer.put("frames",frames);}if(l.reveal!=null){String reveal="layers/xray-"+index+".png";zip.putNextEntry(new ZipEntry(reveal));if(!l.reveal.compress(Bitmap.CompressFormat.PNG,100,zip))throw new IOException("无法保存 X-ray 图层");zip.closeEntry();layer.put("xrayFile",reveal).put("xraySize",l.revealSize);}layers.put(layer);}root.put("layers",layers);zip.putNextEntry(new ZipEntry("wallpaper-mobile.json"));zip.write(root.toString().getBytes(StandardCharsets.UTF_8));zip.closeEntry();}
    try(WallpaperContent.Scene verify=WallpaperContent.scene(target)){if(verify.layers.size()!=layers.length())throw new IOException("适配版校验未通过");}done=true;
   }finally{if(!done)target.delete();}
  }

@@ -67,6 +67,7 @@ public final class CoreChecks {
         DownloadTaskChecks.run();
         FrameSelectionChecks.run();
         PaginationChecks.run();
+        QueryCacheChecks.run();
         DesktopBehaviorChecks.run();
         MotionPagingChecks.run();
         AdaptivePagingChecks.run();

@@ -29,7 +29,7 @@ public final class SteamWebSocket extends in.dragonbra.javasteam.networking.stea
         });
     }
     private void finish(boolean user){if(ended.compareAndSet(false,true))onDisconnected(user);}
-    @Override public void disconnect(boolean user){WebSocket ws=socket;if(ws!=null)ws.cancel();finish(user);}
+    @Override public void disconnect(boolean user){finish(user);WebSocket ws=socket;if(ws!=null)ws.cancel();}
     @Override public void send(byte[] data){WebSocket ws=socket;if(ws==null||!ws.send(ByteString.of(data)))finish(false);}
     @Override public InetAddress getLocalIP(){return InetAddress.getLoopbackAddress();}
     @Override public InetSocketAddress getCurrentEndPoint(){return endpoint;}

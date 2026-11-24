@@ -36,7 +36,7 @@ public final class VideoPlayerActivity extends Activity implements TextureView.S
     private FrameLayout root;
     private LinearLayout top,bottom;
     private TextView hud,clock;
-    private Button play,speed;
+    private Button speed;private ImageView play;
     private SeekBar seek;
     private ProgressBar loading;
     private GestureDetector taps;
@@ -83,27 +83,36 @@ public final class VideoPlayerActivity extends Activity implements TextureView.S
         button.setMinWidth(0);button.setMinimumWidth(0);button.setMinHeight(0);button.setMinimumHeight(0);button.setPadding(dp(12),0,dp(12),0);
         button.setBackgroundColor(Color.TRANSPARENT);button.setOnClickListener(v->click.run());return button;
     }
+    private ImageView icon(String name,String description,Runnable click){
+        ImageView view=new ImageView(this);view.setImageDrawable(new Ui.Icon(name,0xfff2f5f8,dp(24)));view.setScaleType(ImageView.ScaleType.CENTER);view.setContentDescription(description);
+        view.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x33ffffff),null,null));view.setOnClickListener(v->click.run());return view;
+    }
+    /** The play button shows the action it performs; disabled states keep a readable description. */
+    private void playState(String state){
+        String icon=switch(state){case "暂停"->"pause";case "重播"->"refresh";default->"play";};
+        play.setImageDrawable(new Ui.Icon(icon,0xfff2f5f8,dp(24)));play.setContentDescription(state);play.setEnabled(!state.equals("载入中")&&!state.equals("未能播放"));play.setAlpha(play.isEnabled()?1f:.45f);
+    }
     private void build(String title) {
         getWindow().setStatusBarColor(Color.BLACK);getWindow().setNavigationBarColor(Color.BLACK);
         root=new FrameLayout(this);root.setBackgroundColor(Color.BLACK);
         texture=new TextureView(this);texture.setSurfaceTextureListener(this);root.addView(texture,new FrameLayout.LayoutParams(-1,-1));
         loading=new ProgressBar(this);FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(dp(44),dp(44),Gravity.CENTER);root.addView(loading,lp);
         loadingText=label(online?"正在连接 Steam…":"正在载入…",12);loadingText.setGravity(Gravity.CENTER);loadingText.setMaxLines(3);loadingText.setPadding(dp(24),0,dp(24),0);FrameLayout.LayoutParams ltp=new FrameLayout.LayoutParams(-1,-2,Gravity.CENTER);ltp.topMargin=dp(100);root.addView(loadingText,ltp);
-        top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);top.setBackgroundColor(0x99000000);
-        Button back=action("‹",this::finish);back.setTextSize(23);back.setContentDescription(online?"返回工坊作品":"返回视频列表");top.addView(back,new LinearLayout.LayoutParams(dp(38),dp(28)));
-        TextView heading=label(title,13);heading.setMaxLines(1);heading.setEllipsize(android.text.TextUtils.TruncateAt.END);top.addView(heading,new LinearLayout.LayoutParams(0,dp(28),1));heading.setGravity(Gravity.CENTER_VERTICAL);
+        top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);top.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,new int[]{0xb3000000,0x00000000}));
+        ImageView back=icon("previous",online?"返回工坊作品":"返回视频列表",this::finish);top.addView(back,new LinearLayout.LayoutParams(dp(48),dp(48)));
+        TextView heading=label(title,15);heading.setMaxLines(1);heading.setEllipsize(android.text.TextUtils.TruncateAt.END);heading.setTypeface(null,Typeface.BOLD);heading.setShadowLayer(dp(4),0,0,0x99000000);top.addView(heading,new LinearLayout.LayoutParams(0,-2,1));heading.setGravity(Gravity.CENTER_VERTICAL);
         root.addView(top,new FrameLayout.LayoutParams(-1,-2,Gravity.TOP));
-        bottom=column();bottom.setBackgroundColor(0xaa000000);
-        LinearLayout timeline=new LinearLayout(this);timeline.setGravity(Gravity.CENTER_VERTICAL);
-        clock=label("00:00 / 00:00",11);timeline.addView(clock);
-        seek=new SeekBar(this);seek.setMax(10000);seek.setContentDescription("播放进度");timeline.addView(seek,new LinearLayout.LayoutParams(0,dp(22),1));bottom.addView(timeline);
+        bottom=column();bottom.setBackground(new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,new int[]{0xcc000000,0x00000000}));
+        seek=new SeekBar(this);seek.setMax(10000);seek.setContentDescription("播放进度");seek.setProgressTintList(android.content.res.ColorStateList.valueOf(Ui.ACCENT));seek.setThumbTintList(android.content.res.ColorStateList.valueOf(Ui.ACCENT));seek.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(0x66ffffff));
+        LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,dp(32));sp.topMargin=dp(18);bottom.addView(seek,sp);
         LinearLayout actions=new LinearLayout(this);actions.setGravity(Gravity.CENTER_VERTICAL);
-        play=action("暂停",this::togglePlay);actions.addView(play,new LinearLayout.LayoutParams(0,dp(28),1));
-        speed=action(speedText(settings.selectedSpeed()),this::chooseSpeed);actions.addView(speed,new LinearLayout.LayoutParams(0,dp(28),1));
-        actions.addView(action("适配",()->{settings.setZoom(1);transform();hint("画面已适配屏幕",true);scheduleHide();}),new LinearLayout.LayoutParams(0,dp(28),1));
-        Button rotate=action("旋转",()->{settings.setZoom(1);setRequestedOrientation(getResources().getConfiguration().orientation==Configuration.ORIENTATION_LANDSCAPE?ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT:ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);scheduleHide();});
-        rotate.setContentDescription("横竖屏切换，长按恢复自动旋转");rotate.setOnLongClickListener(v->{setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR);hint("已启用自动旋转",true);return true;});
-        actions.addView(rotate,new LinearLayout.LayoutParams(0,dp(28),1));bottom.addView(actions);
+        play=icon("pause","暂停",this::togglePlay);actions.addView(play,new LinearLayout.LayoutParams(dp(48),dp(48)));
+        clock=label("00:00 / 00:00",12);clock.setPadding(dp(4),0,0,0);actions.addView(clock,new LinearLayout.LayoutParams(0,-2,1));
+        speed=action(speedText(settings.selectedSpeed()),this::chooseSpeed);speed.setContentDescription("播放速度");speed.setTypeface(null,Typeface.BOLD);actions.addView(speed,new LinearLayout.LayoutParams(-2,dp(48)));
+        actions.addView(icon("fit","画面适配屏幕",()->{settings.setZoom(1);transform();hint("画面已适配屏幕",true);scheduleHide();}),new LinearLayout.LayoutParams(dp(48),dp(48)));
+        ImageView rotate=icon("rotate","横竖屏切换，长按恢复自动旋转",()->{settings.setZoom(1);setRequestedOrientation(getResources().getConfiguration().orientation==Configuration.ORIENTATION_LANDSCAPE?ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT:ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);scheduleHide();});
+        rotate.setOnLongClickListener(v->{setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR);hint("已启用自动旋转",true);return true;});
+        actions.addView(rotate,new LinearLayout.LayoutParams(dp(48),dp(48)));bottom.addView(actions);
         root.addView(bottom,new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM));
         hud=label("",16);hud.setGravity(Gravity.CENTER);hud.setPadding(dp(22),dp(13),dp(22),dp(13));
         GradientDrawable panel=new GradientDrawable();panel.setColor(0xc51b2027);panel.setCornerRadius(dp(12));hud.setBackground(panel);hud.setVisibility(View.GONE);
@@ -112,8 +121,8 @@ public final class VideoPlayerActivity extends Activity implements TextureView.S
             int left=0,right=0,above=0,below=0;
             if(Build.VERSION.SDK_INT>=30){android.graphics.Insets safe=insets.getInsets(WindowInsets.Type.displayCutout()|WindowInsets.Type.systemGestures());left=safe.left;right=safe.right;above=safe.top;below=safe.bottom;}
             else {DisplayCutout cutout=insets.getDisplayCutout();if(cutout!=null){left=cutout.getSafeInsetLeft();right=cutout.getSafeInsetRight();above=cutout.getSafeInsetTop();}below=insets.getSystemWindowInsetBottom();}
-            top.setPadding(left+dp(4),above+dp(1),right+dp(8),dp(1));
-            bottom.setPadding(left+dp(10),0,right+dp(10),below+dp(1));return insets;
+            top.setPadding(left+dp(4),above+dp(4),right+dp(12),dp(24));
+            bottom.setPadding(left+dp(6),0,right+dp(6),below+dp(6));return insets;
         });
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
             public void onStartTrackingTouch(SeekBar bar){if(!ready)return;seeking=true;main.removeCallbacks(hideControls);cancelHold();try{if(player.isPlaying())player.pause();}catch(IllegalStateException ignored){}}
@@ -164,7 +173,7 @@ public final class VideoPlayerActivity extends Activity implements TextureView.S
     }
     private void prepare(){
         if(!foreground||surface==null||player!=null||opening!=null)return;
-        ready=false;errorShown=false;streamFailure="";loading(true,online?"正在连接 Steam…":"正在载入…");play.setText("载入中");
+        ready=false;errorShown=false;streamFailure="";loading(true,online?"正在连接 Steam…":"正在载入…");playState("载入中");
         if(online){StreamRequest request=new StreamRequest();opening=request;request.future=streamWorkers.submit(request);return;}
         try{JSONObject record=app.job(id);if(!record.optString("state").equals("saved"))throw new IllegalStateException("视频不存在。");attachPlayer(record);}catch(Exception problem){playbackError();}
     }
@@ -191,7 +200,7 @@ public final class VideoPlayerActivity extends Activity implements TextureView.S
         }catch(Exception problem){if(online)streamFailure=VideoApp.error(problem);playbackError();}
     }
     private void playbackError(){
-        ready=false;loading(false,null);playWanted=false;pausePlayer();abandonFocus();setControls(true);play.setText("未能播放");
+        ready=false;loading(false,null);playWanted=false;pausePlayer();abandonFocus();setControls(true);playState("未能播放");
         if(errorShown||!foreground||isFinishing())return;errorShown=true;
         if(online){String reason=!streamFailure.isEmpty()?streamFailure:stream!=null&&!stream.failure().isEmpty()?stream.failure():player!=null&&!player.failure().isEmpty()?player.failure():"网络缓冲中断，或此视频编码不受手机支持。";if(stream!=null)stream.close();AppSheet sheet=new AppSheet(this,"暂时无法在线播放",reason,null);sheet.footerButton("关闭",false,()->{sheet.dialog.dismiss();finish();});sheet.footerButton("重试",true,()->{sheet.dialog.dismiss();releasePlayer();playWanted=true;resumeWanted=true;prepare();});sheet.show();return;}
         new AlertDialog.Builder(this).setTitle("无法播放此视频").setMessage("视频可能已被移除，或此编码不受系统播放器支持。")
@@ -211,7 +220,7 @@ public final class VideoPlayerActivity extends Activity implements TextureView.S
         updatePlayButton();
     }
     private void pausePlayer(){if(player!=null)try{if(player.isPlaying())player.pause();}catch(IllegalStateException ignored){}getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}
-    private void updatePlayButton(){if(play!=null)play.setText(playWanted?"暂停":position>=duration-350&&duration>0?"重播":"播放");}
+    private void updatePlayButton(){if(play!=null)playState(playWanted?"暂停":position>=duration-350&&duration>0?"重播":"播放");}
     private void capturePosition(){if(ready&&player!=null)try{position=player.getCurrentPosition();}catch(IllegalStateException ignored){}}
     private void persistPosition(){if(online||app==null||id==null)return;final int value=position;app.work.submit(()->{try{app.change(id,"playbackPosition",value);}catch(Exception ignored){}});}
     private void releasePlayer(){capturePosition();ready=false;if(opening!=null){StreamRequest old=opening;opening=null;old.cancel();}if(stream!=null){stream.close();stream=null;}if(player!=null){VideoPlayback old=player;player=null;old.setOnPreparedListener(null);old.setOnErrorListener(null);old.release();}abandonFocus();getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}

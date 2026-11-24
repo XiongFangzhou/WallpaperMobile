@@ -32,7 +32,12 @@ public final class VideoApp extends Application {
     public final Object sessionLock=new Object();
     public final CompletableFuture<Void> filesReady=new CompletableFuture<>();
     public PreviewImages previews;
+    DiscoverResults results;
     WallpaperEligibility eligibility;
+    // Parsed records are reused until the stored JSON changes; callers always receive copies.
+    private String jobsRaw,favoritesRaw;
+    private List<JSONObject> jobsCache=new ArrayList<>(),favoritesCache=new ArrayList<>();
+    private Set<String> favoriteIds=new HashSet<>();
     private final Handler main=new Handler(Looper.getMainLooper());
     private final ExecutorService recovery=Executors.newSingleThreadExecutor();
     private final java.util.concurrent.atomic.AtomicBoolean recovering=new java.util.concurrent.atomic.AtomicBoolean();
@@ -89,7 +94,7 @@ public final class VideoApp extends Application {
     }
 
     @Override public void onCreate() {
-        super.onCreate();prefs=getSharedPreferences("video",MODE_PRIVATE);previews=new PreviewImages(getCacheDir());eligibility=new WallpaperEligibility(this);
+        super.onCreate();prefs=getSharedPreferences("video",MODE_PRIVATE);previews=new PreviewImages(getCacheDir());results=new DiscoverResults(getCacheDir());eligibility=new WallpaperEligibility(this);
         registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks(){
             public void onActivityStarted(Activity activity){visibleActivities++;if(visibleActivities==1){retryCount=0;scheduleRecovery(0);}}
             public void onActivityStopped(Activity activity){visibleActivities=Math.max(0,visibleActivities-1);if(visibleActivities==0)main.removeCallbacks(recoveryAttempt);}
@@ -122,37 +127,50 @@ public final class VideoApp extends Application {
     public static void put(JSONObject object,String key,Object value) {
         try{object.put(key,value);}catch(JSONException e){throw new IllegalArgumentException(e);}
     }
-    public synchronized List<JSONObject> jobs() {
+    private static List<JSONObject> parse(String raw){
         List<JSONObject> result=new ArrayList<>();
-        try {JSONArray values=new JSONArray(prefs.getString("jobs","[]"));
-            for(int i=0;i<values.length();i++)result.add(values.getJSONObject(i));
-        }catch(JSONException ignored){}
+        try {JSONArray values=new JSONArray(raw);for(int i=0;i<values.length();i++)result.add(values.getJSONObject(i));}catch(JSONException ignored){}
         return result;
     }
+    private List<JSONObject> storedJobs(){String raw=prefs.getString("jobs","[]");if(!raw.equals(jobsRaw)){jobsCache=parse(raw);jobsRaw=raw;}return jobsCache;}
+    private List<JSONObject> storedFavorites(){
+        String raw=prefs.getString("favorites","[]");
+        if(!raw.equals(favoritesRaw)){favoritesCache=parse(raw);Set<String> ids=new HashSet<>();for(JSONObject item:favoritesCache)ids.add(item.optString("itemId"));favoriteIds=ids;favoritesRaw=raw;}
+        return favoritesCache;
+    }
+    static JSONObject copy(JSONObject source){JSONObject result=new JSONObject();for(Iterator<String> keys=source.keys();keys.hasNext();){String key=keys.next();put(result,key,copyValue(source.opt(key)));}return result;}
+    private static Object copyValue(Object value){
+        if(value instanceof JSONObject object)return copy(object);
+        if(value instanceof JSONArray array){JSONArray result=new JSONArray();for(int i=0;i<array.length();i++)result.put(copyValue(array.opt(i)));return result;}
+        return value;
+    }
+    public synchronized List<JSONObject> jobs() {
+        List<JSONObject> result=new ArrayList<>();for(JSONObject job:storedJobs())result.add(copy(job));return result;
+    }
     public synchronized JSONObject job(String id) {
-        for(JSONObject job:jobs())if(job.optString("id").equals(id))return job;
+        for(JSONObject job:storedJobs())if(job.optString("id").equals(id))return copy(job);
         throw new IllegalArgumentException("任务不存在。");
     }
     public synchronized void save(JSONObject changed) {
-        JSONArray values=new JSONArray();boolean found=false;
-        for(JSONObject item:jobs()) {
-            if(item.optString("id").equals(changed.optString("id"))) {values.put(changed);found=true;}
-            else values.put(item);
+        JSONArray values=new JSONArray();List<JSONObject> next=new ArrayList<>();JSONObject stored=copy(changed);boolean found=false;
+        for(JSONObject item:storedJobs()) {
+            JSONObject value=item.optString("id").equals(changed.optString("id"))?stored:item;if(value==stored)found=true;values.put(value);next.add(value);
         }
-        if(!found)values.put(changed);
-        if(!prefs.edit().putString("jobs",values.toString()).commit())
+        if(!found){values.put(stored);next.add(stored);}
+        String raw=values.toString();
+        if(!prefs.edit().putString("jobs",raw).commit())
             throw new IllegalStateException("无法保存任务记录，请检查手机存储空间。");
+        jobsRaw=raw;jobsCache=next;
         changed();
     }
     public synchronized void change(String id,String key,Object value) {
         JSONObject record=job(id);put(record,key,value);save(record);
     }
     public synchronized List<JSONObject> favorites(){
-        List<JSONObject> values=new ArrayList<>();
-        try{JSONArray list=new JSONArray(prefs.getString("favorites","[]"));for(int i=0;i<list.length();i++)values.add(list.getJSONObject(i));}catch(JSONException ignored){}
-        return values;
+        List<JSONObject> values=new ArrayList<>();for(JSONObject item:storedFavorites())values.add(copy(item));return values;
     }
-    public synchronized boolean isFavorite(String itemId){return FavoriteIndex.contains(favorites(),itemId,item->item.optString("itemId"));}
+    /** Cheap enough for every card bind: a set lookup on the cached favorite ids. */
+    public synchronized boolean isFavorite(String itemId){storedFavorites();return favoriteIds.contains(itemId);}
     public synchronized void toggleFavorite(JSONObject item){
         JSONObject entry=new JSONObject();for(String key:new String[]{"itemId","title","previewUrl","description","video","type","size","created"})if(item.has(key))put(entry,key,item.opt(key));put(entry,"favoriteAt",System.currentTimeMillis());
         JSONArray next=new JSONArray();for(JSONObject value:FavoriteIndex.toggle(favorites(),entry,value->value.optString("itemId")))next.put(value);

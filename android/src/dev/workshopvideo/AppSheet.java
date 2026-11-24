@@ -28,7 +28,7 @@ final class AppSheet {
         LinearLayout names=column();names.setPadding(previewUrl!=null&&!previewUrl.isEmpty()?dp(13):0,0,dp(8),0);
         TextView heading=label(title,19,Ui.TEXT);heading.setTypeface(null,Typeface.BOLD);heading.setMaxLines(2);heading.setEllipsize(TextUtils.TruncateAt.END);names.addView(heading);
         subtitle=label(detail,12,Ui.MUTED);subtitle.setPadding(0,dp(6),0,0);subtitle.setVisibility(detail==null||detail.isEmpty()?View.GONE:View.VISIBLE);names.addView(subtitle);header.addView(names,new LinearLayout.LayoutParams(0,-2,1));
-        ImageView close=new ImageView(activity);close.setImageDrawable(new Ui.Icon("close",Ui.MUTED,dp(20)));close.setPadding(dp(10),dp(10),dp(10),dp(10));close.setBackground(new RippleDrawable(ColorStateList.valueOf(0x22ffffff),background(0xff202d3c,dp(13)),null));close.setContentDescription("关闭");close.setOnClickListener(v->dialog.dismiss());header.addView(close,new LinearLayout.LayoutParams(dp(40),dp(40)));box.addView(header);
+        ImageView close=new ImageView(activity);close.setImageDrawable(new Ui.Icon("close",Ui.MUTED,dp(20)));close.setPadding(dp(10),dp(10),dp(10),dp(10));close.setBackground(new RippleDrawable(ColorStateList.valueOf(0x22ffffff),background(Ui.RAISED,dp(13)),null));close.setContentDescription("关闭");close.setOnClickListener(v->dialog.dismiss());header.addView(close,new LinearLayout.LayoutParams(dp(40),dp(40)));box.addView(header);
         fields=column();actions=column();footer=new LinearLayout(activity);footer.setGravity(Gravity.CENTER_VERTICAL);footer.setPadding(0,dp(14),0,0);footer.setVisibility(View.GONE);
         LinearLayout content=column();content.addView(fields);content.addView(actions);
         contentScroll=new ScrollView(activity){
@@ -54,15 +54,18 @@ final class AppSheet {
     void field(View content){LinearLayout.LayoutParams layout=new LinearLayout.LayoutParams(-1,-2);if(fields.getChildCount()>0)layout.topMargin=dp(12);fields.addView(content,layout);contentScroll.setVisibility(View.VISIBLE);}
     View action(String icon,String title,String caption,boolean destructive,Runnable action){
         int color=destructive?0xffff9caa:Ui.ACCENT;LinearLayout row=new LinearLayout(activity);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(12),dp(12),dp(12),dp(12));row.setMinimumHeight(dp(66));
-        row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x22a9efd5),background(0xff1d2938,dp(16)),null));
-        ImageView image=new ImageView(activity);image.setImageDrawable(new Ui.Icon(icon,color,dp(22)));image.setPadding(dp(10),dp(10),dp(10),dp(10));image.setBackground(background(destructive?0xff382733:0xff243d3c,dp(13)));row.addView(image,new LinearLayout.LayoutParams(dp(42),dp(42)));
+        row.setBackground(Ui.pressable(background(Ui.RAISED,dp(16)),0x22a9efd5,dp(16)));
+        ImageView image=new ImageView(activity);image.setImageDrawable(new Ui.Icon(icon,color,dp(22)));image.setPadding(dp(10),dp(10),dp(10),dp(10));image.setBackground(background(destructive?0x29ff9caa:Ui.ACCENT_SOFT,dp(13)));row.addView(image,new LinearLayout.LayoutParams(dp(42),dp(42)));
         LinearLayout words=column();words.setPadding(dp(14),0,dp(8),0);words.addView(label(title,15,destructive?color:Ui.TEXT));if(caption!=null&&!caption.isEmpty()){TextView hint=label(caption,11,Ui.MUTED);hint.setPadding(0,dp(4),0,0);words.addView(hint);}row.addView(words,new LinearLayout.LayoutParams(0,-2,1));row.addView(label("›",23,Ui.MUTED));
         row.setContentDescription(title+(caption==null||caption.isEmpty()?"":"，"+caption));row.setOnClickListener(v->{dialog.dismiss();action.run();});LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,-2);rp.bottomMargin=dp(8);if(actions.getChildCount()==0&&fields.getChildCount()>0)rp.topMargin=dp(10);actions.addView(row,rp);contentScroll.setVisibility(View.VISIBLE);return row;
     }
     Button footerButton(String title,boolean primary,Runnable run){return footerButton(title,primary,false,run);}
+    /** Square icon action at the start of the footer, e.g. favorite next to download. */
+    ImageView footerIcon(String icon,String description,Runnable run){
+        ImageView button=Ui.iconButton(activity,icon,description,run);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(dp(48),dp(48));if(footer.getChildCount()>0)p.leftMargin=dp(9);footer.addView(button,p);footer.setVisibility(View.VISIBLE);return button;
+    }
     Button footerButton(String title,boolean primary,boolean destructive,Runnable run){
-        Button button=new Button(activity);button.setText(title);button.setAllCaps(false);button.setSingleLine(true);button.setTextSize(13);button.setMinWidth(0);button.setMinimumWidth(0);button.setGravity(Gravity.CENTER);button.setPadding(dp(10),0,dp(10),0);button.setTextColor(primary?0xff15362c:destructive?0xffff9caa:Ui.TEXT);
-        GradientDrawable bg=background(primary?(destructive?0xffffa7b3:Ui.ACCENT):0xff233141,dp(14));if(!primary)bg.setStroke(dp(1),0xff334355);button.setBackground(new RippleDrawable(ColorStateList.valueOf(0x33ffffff),bg,null));button.setOnClickListener(v->{if(run!=null)run.run();});
+        Button button=Ui.button(activity,title,primary?(destructive?Ui.Kind.DANGER:Ui.Kind.PRIMARY):Ui.Kind.SECONDARY,run);if(!primary&&destructive)button.setTextColor(Ui.DANGER);button.setPadding(dp(10),0,dp(10),0);
         LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(48),primary?1.4f:1);if(footer.getChildCount()>0)p.leftMargin=dp(9);footer.addView(button,p);footer.setVisibility(View.VISIBLE);return button;
     }
     void show(){if(activity.isFinishing()||activity.isDestroyed())return;dialog.show();dialog.getWindow().setLayout(-1,-2);box.setTranslationY(dp(24));box.setAlpha(0);box.animate().translationY(0).alpha(1).setDuration(180).start();}

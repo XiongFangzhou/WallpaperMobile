@@ -4,7 +4,26 @@ final class ContentChecks {
  static void le(DataOutputStream d,int n)throws IOException{d.writeInt(Integer.reverseBytes(n));}
  static byte[] pkg(String magic,String[] names,byte[][] data)throws Exception {ByteArrayOutputStream out=new ByteArrayOutputStream();DataOutputStream d=new DataOutputStream(out);le(d,magic.length());d.writeBytes(magic);le(d,names.length);int offset=0;for(int i=0;i<names.length;i++){byte[] n=names[i].getBytes(java.nio.charset.StandardCharsets.UTF_8);le(d,n.length);d.write(n);le(d,offset);le(d,data[i].length);offset+=data[i].length;}for(byte[] bytes:data)d.write(bytes);return out.toByteArray();}
  static byte[] tex(int format,int flags,int w,int h,byte[] data)throws Exception {ByteArrayOutputStream out=new ByteArrayOutputStream();DataOutputStream d=new DataOutputStream(out);d.writeBytes("TEXV0005\0TEXI0001\0");for(int n:new int[]{format,flags,w,h,w,h,0})le(d,n);d.writeBytes("TEXB0001\0");for(int n:new int[]{1,1,w,h,data.length})le(d,n);d.write(data);return out.toByteArray();}
+ static byte[] spriteTex(String table,float[][] frames)throws Exception {
+  ByteArrayOutputStream out=new ByteArrayOutputStream();DataOutputStream d=new DataOutputStream(out);d.writeBytes("TEXV0005\0TEXI0001\0");for(int n:new int[]{0,4|2,4,2,4,2,0})le(d,n);
+  d.writeBytes("TEXB0003\0");for(int n:new int[]{1,0,1,4,2,0,0,32})le(d,n);d.write(new byte[32]);
+  d.writeBytes(table+"\0");le(d,frames.length);if(table.equals("TEXS0003")){le(d,2);le(d,2);}
+  for(float[] f:frames){le(d,0);le(d,Float.floatToIntBits(f[0]));for(int k=1;k<7;k++)le(d,table.equals("TEXS0001")?(int)f[k]:Float.floatToIntBits(f[k]));}
+  return out.toByteArray();
+ }
  static void run()throws Exception {
+  byte[] sprite=spriteTex("TEXS0003",new float[][]{{.1f,0,0,2,0,0,2},{.3f,2,0,2,0,0,2}});
+  java.util.List<TexturePixels.Frame> frames=TexturePixels.frames(sprite);
+  check(frames.size()==2&&frames.get(1).u0()==.5f&&frames.get(1).u1()==1f&&frames.get(0).v1()==1f,"sprite frame table is normalized to the image area");
+  check(TexturePixels.sprite(sprite)&&!TexturePixels.video(sprite),"sprite flag detection");
+  check(TexturePixels.readSprite(sprite,2048).width()==4,"sprite atlas decodes through the explicit entry point");
+  rejects(()->TexturePixels.read(sprite),"plain read still refuses to freeze an animated texture");
+  check(TexturePixels.frameAt(frames,0)==0&&TexturePixels.frameAt(frames,.15)==1&&TexturePixels.frameAt(frames,.45)==0&&TexturePixels.frameAt(frames,-.05)==1,"frame selection loops over summed durations");
+  check(TexturePixels.frames(spriteTex("TEXS0001",new float[][]{{.2f,0,0,4,0,0,2}})).get(0).u1()==1f,"integer frame table");
+  rejects(()->TexturePixels.frames(spriteTex("TEXS0003",new float[][]{{.1f,3,0,2,0,0,2}})),"frame outside the image");
+  rejects(()->TexturePixels.frames(spriteTex("TEXS0003",new float[][]{{.1f,0,0,2,1,0,2}})),"rotated frame");
+  rejects(()->TexturePixels.frames(spriteTex("TEXS0003",new float[][]{{0,0,0,2,0,0,2}})),"zero frame duration");
+  check(TexturePixels.frames(tex(0,0,1,1,new byte[4])).isEmpty(),"still textures have no frames");
   Path dir=Files.createTempDirectory(Path.of(System.getProperty("java.io.tmpdir")),"content-checks-");File file=dir.resolve("sample.mpkg").toFile();
   for(String magic:new String[]{"PKGM0014","PKGV0022"}){Files.write(file.toPath(),pkg(magic,new String[]{"project.json","layers/bg.png"},new byte[][]{"{}".getBytes(),new byte[]{1,2,3}}));try(ContentArchive a=new ContentArchive(file)){check(a.names().size()==2,"WE "+magic+" directory");check(Arrays.equals(a.read("layers/bg.png",3),new byte[]{1,2,3}),"WE "+magic+" payload");rejects(()->a.read("layers/bg.png",2),"entry read budget");}}
   byte[] raw=new byte[24];Arrays.fill(raw,(byte)255);Files.write(file.toPath(),pkg("PKGV0023",new String[]{"font","font"},new byte[][]{raw,raw}));try(ContentArchive a=new ContentArchive(file)){check(a.names().size()==1&&Arrays.equals(a.read("font",24),raw),"real PKGV identical duplicate asset and raw high-bit data are safe");}
@@ -18,7 +37,7 @@ final class ContentChecks {
   Files.write(file.toPath(),pkg("PKGM0014",new String[]{"../escape"},new byte[][]{{1}}));rejects(()->{try(ContentArchive ignored=new ContentArchive(file)){}},"unsafe PKGM name rejected");
   byte[] broken=pkg("PKGM0014",new String[]{"ok"},new byte[][]{{1}});Files.write(file.toPath(),Arrays.copyOf(broken,broken.length-1));rejects(()->{try(ContentArchive ignored=new ContentArchive(file)){}},"truncated PKGM rejected");
   try(ZipOutputStream zip=new ZipOutputStream(new FileOutputStream(file))){zip.putNextEntry(new ZipEntry("wallpaper-mobile.json"));zip.write(new byte[40]);zip.closeEntry();}try(ContentArchive a=new ContentArchive(file)){check(a.read("wallpaper-mobile.json",40).length==40,"ZIP scene read");rejects(()->a.read("wallpaper-mobile.json",39),"ZIP expansion budget");}
-  rejects(()->ContentArchive.lz4(new byte[]{0,0,0},4),"invalid LZ4 offset");rejects(()->ContentArchive.lz4(new byte[]{(byte)0xf0},4),"truncated LZ4 literal length");rejects(()->ContentArchive.lz4(new byte[]{0x20,1,2},1),"LZ4 output overflow");
+  rejects(()->ContentArchive.lz4(new byte[]{0,0,0},4),"invalid LZ4 offset");rejects(()->ContentArchive.lz4(new byte[]{(byte)0xf0},4),"truncated LZ4 literal length");rejects(()->ContentArchive.lz4(new byte[]{0x20,1,2},1),"LZ4 output overflow");byte[] lengths=new byte[9_000_000];lengths[0]=(byte)0xf0;java.util.Arrays.fill(lengths,1,lengths.length,(byte)255);rejects(()->ContentArchive.lz4(lengths,16),"LZ4 length accumulator overflow");
   TexturePixels.Image rgba=TexturePixels.read(tex(0,0,1,1,new byte[]{10,20,30,(byte)200}));check(TexturePixels.pixels(rgba)[0]==0xc80a141e,"TEX RGBA channel mapping");
   TexturePixels.Image gray=TexturePixels.read(tex(9,0,1,1,new byte[]{(byte)128}));check(TexturePixels.pixels(gray)[0]==0xff808080,"TEX grayscale");
   TexturePixels.Image dxt=TexturePixels.read(tex(7,0,4,4,new byte[]{0,(byte)248,0,0,0,0,0,0}));check(TexturePixels.pixels(dxt)[15]==0xffff0000,"TEX DXT1 block decode");

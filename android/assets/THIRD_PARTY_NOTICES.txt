@@ -1,4 +1,4 @@
-WallpaperMobile 0.3.5
+WallpaperMobile third-party notices
 
 This application is an independent client and is not affiliated with Valve or
 Wallpaper Engine. Steam and Wallpaper Engine are their respective owners' marks.

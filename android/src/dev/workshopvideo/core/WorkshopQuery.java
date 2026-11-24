@@ -88,6 +88,11 @@ public final class WorkshopQuery {
         return q;
     }
 
+    /** Stable identity of one results page; settings() carries a timestamp comment. */
+    public String cacheKey(){
+        return settings().lines().filter(line->!line.startsWith("#")).sorted().collect(java.util.stream.Collectors.joining("\n"))+"\npage="+page;
+    }
+
     /** Save applied settings rather than the current results page. */
     public String settings() {
         request();Properties values=new Properties();

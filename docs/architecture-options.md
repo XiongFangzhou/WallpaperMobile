@@ -30,7 +30,6 @@ flowchart LR
 | `android/test-host` | 平台替身及 Android 原生图形检查 |
 | `android/test-device` | 完整 Android 模拟器测试 |
 | `tools` | 构建、依赖恢复、测试与样本分析工具 |
-| `bridge` / `web` | 早期可选电脑中转实验，主线 Android 应用独立运行 |
 | `docs` | 功能、构建与开发文档 |
 
 ## 开发配置

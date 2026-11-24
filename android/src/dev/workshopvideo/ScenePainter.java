@@ -2,14 +2,15 @@ package dev.workshopvideo;
 import android.graphics.*;import org.json.JSONObject;import dev.workshopvideo.core.EffectMotion;
 /** Shared scene transforms for posters, live surfaces and Android pixel regression checks. */
 final class ScenePainter {
- static void layers(Canvas c,WallpaperContent.Scene scene,Paint p,JSONObject options,EffectMotion.Frame frame,float pointerX,float pointerY,boolean down){int index=0;
+ static void layers(Canvas c,WallpaperContent.Scene scene,Paint p,JSONObject options,EffectMotion.Frame frame,float pointerX,float pointerY,boolean down){layers(c,scene,p,options,frame,pointerX,pointerY,down,0);}
+ static void layers(Canvas c,WallpaperContent.Scene scene,Paint p,JSONObject options,EffectMotion.Frame frame,float pointerX,float pointerY,boolean down,double seconds){int index=0;
   for(WallpaperContent.Layer l:scene.layers){int i=index++;c.save();
    float dx=(float)options.optDouble("layerX"+i,0)*scene.width,dy=(float)options.optDouble("layerY"+i,0)*scene.height;
    float depth=(float)options.optDouble("depth"+i,l.depth)*(float)options.optDouble("layerDepth",1);
    if(frame!=null){dx+=frame.x()*scene.width*.5f*depth;dy+=frame.y()*scene.height*.5f*depth;}
    c.translate(dx,dy);c.rotate(l.rotation,l.x+l.w/2,l.y+l.h/2);p.setAlpha((int)(l.alpha*options.optDouble("opacity"+i,1)*255));
    RectF target=new RectF(l.x,l.y,l.x+l.w,l.y+l.h);
-   if(l.bitmap!=null)c.drawBitmap(l.bitmap,null,target,p);else{p.setColor(Color.WHITE);p.setTextSize(l.h);c.drawText(l.text,l.x,l.y+l.h,p);}
+   if(l.bitmap!=null){Rect source=null;if(!l.frames.isEmpty()){var r=l.region(seconds);int bw=l.bitmap.getWidth(),bh=l.bitmap.getHeight();source=new Rect(Math.round(r.u0()*bw),Math.round(r.v0()*bh),Math.max(1,Math.round(r.u1()*bw)),Math.max(1,Math.round(r.v1()*bh)));}c.drawBitmap(l.bitmap,source,target,p);}else{p.setColor(Color.WHITE);p.setTextSize(l.h);c.drawText(l.text,l.x,l.y+l.h,p);}
    // X-ray is exposed only for the explicitly supported simple two-image variant.
    if(l.reveal!=null&&options.optBoolean("xray",true)&&down){
     c.save();Path circle=new Path();float radius=l.w*(float)options.optDouble("xraySize",l.revealSize)*.5f;float[] local={pointerX,pointerY};Matrix transform=new Matrix();c.getMatrix(transform);if(transform.invert(transform)){transform.mapPoints(local);circle.addCircle(local[0],local[1],Math.max(1,radius),Path.Direction.CW);c.clipPath(circle);c.drawBitmap(l.reveal,null,target,p);}c.restore();
