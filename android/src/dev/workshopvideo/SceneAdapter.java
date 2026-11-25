@@ -14,7 +14,11 @@ final class SceneAdapter {
   final WallpaperContent.Scene scene=new WallpaperContent.Scene();
   final LinkedHashMap<String,Integer> skipped=new LinkedHashMap<>();
   final LinkedHashSet<String> effects=new LinkedHashSet<>();
-  int objects,images,particles,texts,sounds,models,scripts,bindings,xrays,animations,puppets,puppetMotions,puppetStatic,blended,particleSystems,particleApproximate,particleChildren;
+  int objects,images,particles,texts,sounds,models,scripts,bindings,xrays,animations,puppets,puppetMotions,puppetStatic,blended,solidLayers,composeLayers,fullscreenLayers,textLayers,effectGroups,multiPass,particleSystems,particleApproximate,particleChildren;
+  /** Fonts text layers name that neither the scene nor Wallpaper Engine's assets provide. */
+  final java.util.TreeSet<String> missingFonts=new java.util.TreeSet<>();
+  /** Fonts read during conversion, shared by every text layer that uses them. */
+  final java.util.HashMap<String,byte[]> fonts=new java.util.HashMap<>();final java.util.HashMap<String,android.graphics.Typeface> typefaces=new java.util.HashMap<>();
   /** Author effects that run from the package's own shaders, and the ones left out with their reason. */
   final LinkedHashMap<String,Integer> keptEffects=new LinkedHashMap<>();final LinkedHashMap<String,String> droppedEffects=new LinkedHashMap<>();
   void keep(String name){keptEffects.merge(name,1,Integer::sum);}
@@ -23,8 +27,14 @@ final class SceneAdapter {
   String error="";
   /** A visible video-texture layer covering most of the canvas: kept as a video wallpaper when no image layer survives. */
   String videoTexture="";float videoCover;
+  /** Wallpaper Engine's own assets were available to fill in engine models, textures and headers. */
+  boolean engineAssets;
+  /** The scene's camera object (zoom and centre), when the author placed one. */
+  JSONObject cameraObject;
   /** Every scene object with its saved properties and scripts, run on the phone by assets/scene-script-runtime.js. */
   JSONObject scriptScene;String scriptSources="";int scriptedHidden;
+  /** All author properties (project.json), and the share of full resolution images keep so every layer fits the phone. */
+  JSONObject declared=new JSONObject();float density=1;boolean bloom;
   /** Author properties (project.json) the converted layers depend on, offered as switches on the phone. */
   final JSONObject properties=new JSONObject();int propertyLayers;JSONObject general=new JSONObject();
   void skip(String reason){skipped.put(reason,skipped.getOrDefault(reason,0)+1);}
@@ -33,6 +43,14 @@ final class SceneAdapter {
    StringBuilder s=new StringBuilder("原作：").append(objects).append(" 个对象，图片 ").append(images).append("、粒子 ").append(particles).append("、文字 ").append(texts).append("、音频 ").append(sounds).append("、模型 ").append(models).append("。\n");
    s.append("实际解码可保留：").append(scene.layers.size()).append(" 个图片图层（").append(scene.width).append(" × ").append(scene.height).append("）。\n");
    if(puppets>0)s.append("骨骼图层：").append(puppets).append(" 个按原作网格绘制").append(puppetMotions>0?"，其中 "+puppetMotions+" 个播放骨骼动画":"").append("。\n");
+   if(density<.995f)s.append("为在本机内存内保留全部图层，图片清晰度按比例降低到原来的 ").append(Math.round(density*100)).append("%。").append((char)10);
+   if(multiPass>0)s.append("多步骤特效（模糊、光线、辉光等）：").append(multiPass).append(" 个按原作的渲染步骤运行。\n");
+   if(textLayers>0)s.append("文字图层：").append(textLayers).append(" 个，时钟、日期等由作者脚本实时更新").append(missingFonts.isEmpty()?"":"；缺少字体 "+String.join("、",missingFonts)+"，用系统字体代替").append("。").append((char)10);
+   if(bloom)s.append("泛光：按 Wallpaper Engine 的泛光通道（阈值、强度、色调）在手机上渲染。").append((char)10);
+   if(fullscreenLayers>0)s.append("全屏后期层：").append(fullscreenLayers).append(" 个，作者特效作用于其下方的整个画面。").append((char)10);
+   if(composeLayers>0)s.append("合成层：").append(composeLayers).append(" 个，其中的图层合并后再应用作者特效。").append((char)10);
+   if(solidLayers>0)s.append("纯色图层：").append(solidLayers).append(" 个。\n");
+   s.append(engineAssets?"已使用 Wallpaper Engine 原版素材补齐内置图层、贴图和着色器头文件。\n":"未下载 Wallpaper Engine 素材：内置图层和引擎贴图可能缺失或使用近似版，可在「通用设置 → Wallpaper Engine 素材」下载后重新下载此场景。\n");
    if(blended>0)s.append("混合模式图层：").append(blended).append(" 个（叠加、变亮、滤色等）按原作方式合成。\n");
    if(puppetStatic>0)s.append("骨骼图层：").append(puppetStatic).append(" 个网格格式暂不支持，以原图矩形显示。\n");
    if(animations>0)s.append("保留帧动画：").append(animations).append(" 个动图图层，按原作的帧时长循环播放。\n");
@@ -45,7 +63,7 @@ final class SceneAdapter {
    if(bindings>0)s.append("作者属性绑定 ").append(bindings).append(" 处：使用作者设定的默认值。\n");
    for(var e:skipped.entrySet())s.append("跳过 ").append(e.getValue()).append(" 层：").append(e.getKey()).append("。\n");
    if(particleSystems>0)s.append("粒子：").append(particleSystems).append(" 套按原作参数模拟").append(particleApproximate>0?"，其中 "+particleApproximate+" 套使用近似贴图（引擎自带贴图）":"").append(particleChildren>0?"；"+particleChildren+" 套的子粒子未保留":"").append("。\n");
-   s.append("适配版不保留动态文字、音频响应和 3D 模型。可使用已保留的特效、X-ray、手机陀螺仪、触控及桌面滑动效果。");
+   s.append("适配版不保留音频响应和 3D 模型。可使用已保留的特效、X-ray、手机陀螺仪、触控及桌面滑动效果。");
    if(!error.isEmpty())s.append("\n无法适配：").append(error);
    return s.toString();
   }
@@ -66,20 +84,25 @@ final class SceneAdapter {
   try {WallpaperPackage.normalize(source,normalized,workspace);try(ContentArchive a=new ContentArchive(normalized)){return inspect(a);}}
   finally{normalized.delete();}
  }
+ /** Raise whenever conversion output improves; saved scenes made by an older version are converted again from their originals. */
+ static final int VERSION=33;
+ /** Wallpaper Engine's own assets (downloaded on the phone, or the desktop install in checks); null when unavailable. */
+ static volatile File engineRoot;
  static Report inspect(ContentArchive a)throws Exception {
-  Report r=new Report();try{
+  if(a.fallbackRoot()==null&&engineRoot!=null)a.fallback(engineRoot);
+  Report r=new Report();r.engineAssets=a.fallbackRoot()!=null;dev.workshopvideo.core.SceneBudget budget=dev.workshopvideo.core.SceneBudget.current();try{
    if(a.has("wallpaper-mobile.json"))throw new IOException("已经是手机场景，无需适配");
    String entry="scene.json";if(a.has("project.json")){String declared=WallpaperContent.json(a,"project.json").optString("file");if(declared.endsWith(".json")&&a.has(declared))entry=declared;}
    JSONObject root=WallpaperContent.json(a,entry);scan(root,r);
-   JSONObject projectProperties=projectProperties(a);resolve(root,projectProperties);
-   r.general=root.optJSONObject("general")==null?new JSONObject():root.optJSONObject("general");
+   JSONObject projectProperties=projectProperties(a);resolve(root,projectProperties);r.declared=projectProperties;
+   r.general=root.optJSONObject("general")==null?new JSONObject():root.optJSONObject("general");cameraSettings(root,projectProperties,r);
    JSONObject general=root.optJSONObject("general"),projection=general==null?null:general.optJSONObject("orthogonalprojection");
    if(projection==null)throw new IOException("缺少正交画布尺寸，无法可靠恢复布局");
    r.scene.width=projection.optInt("width",0);r.scene.height=projection.optInt("height",0);
    if(r.scene.width<1||r.scene.height<1||r.scene.width>16384||r.scene.height>16384)throw new IOException("画布尺寸无效");
    JSONArray objects=root.getJSONArray("objects");r.objects=objects.length();if(r.objects>4096)throw new IOException("对象数量超出分析预算");
    long pixels=0;JSONObject includes=null;
-   if(r.scripts>0){StringBuilder sources=new StringBuilder();r.scriptScene=scriptScene(a,objects,r.scene.width,r.scene.height,sources);r.scriptSources=sources.toString();}
+   if(r.scripts>0){StringBuilder sources=new StringBuilder();r.scriptScene=scriptScene(a,objects,r.scene.width,r.scene.height,sources,projectProperties,r);r.scriptSources=sources.toString();}
    java.util.HashMap<Integer,Integer> outputIndex=new java.util.HashMap<>();java.util.IdentityHashMap<WallpaperContent.Layer,Integer> attachSources=new java.util.IdentityHashMap<>();
    java.util.HashMap<Integer,JSONObject> byId=new java.util.HashMap<>();for(int i=0;i<objects.length();i++){JSONObject o=objects.optJSONObject(i);if(o!=null&&o.has("id"))byId.put(o.optInt("id"),o);}
    for(int i=0;i<objects.length();i++){
@@ -93,28 +116,38 @@ final class SceneAdapter {
      catch(InterruptedIOException stop){throw stop;}catch(Exception e){r.skip("粒子："+(e.getMessage()==null?"无法读取":e.getMessage()));}
      continue;
     }
-    if(!imageObject)continue;boolean startHidden=false;
+    boolean textObject=!imageObject&&o.has("text")&&!o.isNull("text");
+    if(!imageObject&&!textObject)continue;boolean startHidden=false;
     Visibility shown=visibility(o,byId,projectProperties);
     if(!shown.fixed){if(r.scriptScene==null||!scriptedVisibility(o,r.scriptSources)){r.skip("默认隐藏");continue;}startHidden=true;}
-    Bitmap bitmap=null;
+    Bitmap bitmap=null;SceneText text=null;
     try{
-     if(imageLayers(r.scene)>=48)throw new IOException("超过 48 个图片图层预算");
      // Skeletal layers keep their rest pose; the image quad is the puppet's bind pose.
      dev.workshopvideo.core.PuppetModel puppetModel=null;byte[] puppetBytes=null;
      for(String key:new String[]{"origin","size","scale","angles"}){Object raw=o.opt(key);if(raw instanceof JSONObject&&((JSONObject)raw).isNull("value"))throw new IOException("图层变换没有已存默认值");}
      float[] crop=WallpaperContent.vector(o.opt("cropoffset"),0,0);for(float v:crop)if(Math.abs(v)>.001)throw new IOException("非零裁切偏移");
-     JSONObject model=WallpaperContent.json(a,WallpaperContent.asset(a,image));scan(model,r);
+     JSONObject model=textObject?new JSONObject():WallpaperContent.json(a,WallpaperContent.asset(a,image));scan(model,r);
      String puppetPath=model.optString("puppet","");
      if(!puppetPath.isEmpty()){
       try{puppetBytes=a.read(ContentArchive.path(puppetPath),64*1024*1024);puppetModel=dev.workshopvideo.core.PuppetModel.parse(puppetBytes);if(puppetModel.mesh==null)throw new IOException("骨骼网格格式不支持");}
       catch(InterruptedIOException stop){throw stop;}catch(IOException unsupported){puppetModel=null;puppetBytes=null;r.puppetStatic++;}
      }
+     // Engine layer models: groups only arrange their children; full-screen layers post-process the whole frame.
+     boolean compose=model.optBoolean("passthrough"),fullscreen=compose&&model.optBoolean("fullscreen");if(fullscreen)r.fullscreenLayers++;else if(compose)r.composeLayers++;
+     boolean solid=model.optBoolean("solidlayer");if(solid)r.solidLayers++;
+     JSONObject pass=new JSONObject();
+     if(!compose&&!textObject){
      JSONObject mat=WallpaperContent.json(a,WallpaperContent.asset(a,model.getString("material")));scan(mat,r);
      JSONArray passes=mat.optJSONArray("passes");if(passes==null||passes.length()!=1)throw new IOException("多通道或非图片材质");
-     JSONObject pass=passes.getJSONObject(0);String shader=pass.optString("shader");if(!shader.equals("genericimage2")&&!shader.equals("genericimage4"))throw new IOException("自定义着色器");
+     pass=passes.getJSONObject(0);String shader=pass.optString("shader");if(!solid&&!shader.equals("genericimage2")&&!shader.equals("genericimage4"))throw new IOException("自定义着色器");
+     }
      // Blend modes other than normal need a compositor; don't render additive masks as opaque images.
      Object passBlending=pass.opt("blending");if(passBlending instanceof Number&&((Number)passBlending).intValue()>1)throw new IOException("非标准混合模式");
      int colorBlend=(int)number(o.opt("colorBlendMode"),0);if(colorBlend<0||colorBlend>32)throw new IOException("未知的混合模式");boolean additive="additive".equals(pass.optString("blending"));
+     java.util.List<dev.workshopvideo.core.TexturePixels.Frame> frames;
+     if(textObject){frames=java.util.List.of();text=text(a,o,projectProperties,r);bitmap=text.draw();r.textLayers++;}
+     else if(solid||compose){frames=java.util.List.of();bitmap=compose?Bitmap.createBitmap(new int[]{0},1,1,Bitmap.Config.ARGB_8888):solidBitmap(o);}
+     else{
      JSONArray textures=pass.optJSONArray("textures");if(textures==null||textures.length()!=1||!(textures.opt(0) instanceof String))throw new IOException("没有可解码的基础图片纹理");
      String texture=textures.getString(0);byte[] raw=a.read(WallpaperContent.asset(a,texture),32*1024*1024);
      if(dev.workshopvideo.core.TexturePixels.video(raw)){
@@ -123,17 +156,30 @@ final class SceneAdapter {
       if(r.videoTexture.isEmpty()&&cover>=.9f&&!o.has("parent")){r.videoTexture=WallpaperContent.asset(a,texture);r.videoCover=cover;}
       throw new IOException("视频纹理图层尚不支持");
      }
-     java.util.List<dev.workshopvideo.core.TexturePixels.Frame> frames=dev.workshopvideo.core.TexturePixels.sprite(raw)?dev.workshopvideo.core.TexturePixels.frames(raw):java.util.List.of();
+     frames=dev.workshopvideo.core.TexturePixels.sprite(raw)?dev.workshopvideo.core.TexturePixels.frames(raw):java.util.List.of();
      bitmap=WallpaperContent.bitmap(raw,!frames.isEmpty());raw=null;
+     }
      bitmap=toDisplayDensity(bitmap,o,r.scene.width,r.scene.height,frames.isEmpty()?1:Math.max(1,frames.size()));
-     if(pixels+(long)bitmap.getWidth()*bitmap.getHeight()>16L*1024*1024)throw new IOException("超过 1600 万像素内存预算");
+     // Every layer is kept: when the scene outgrows this phone's memory, all images step down in resolution together.
+     bitmap=shrink(bitmap,r.density);
+     if(pixels+(long)bitmap.getWidth()*bitmap.getHeight()>budget.pixels()){
+      float f=Math.max(.1f,(float)Math.sqrt(budget.pixels()*.85/(double)(pixels+(long)bitmap.getWidth()*bitmap.getHeight())));r.density*=f;
+      for(WallpaperContent.Layer kept:r.scene.layers){kept.bitmap=shrink(kept.bitmap,f);if(kept.reveal!=null)kept.reveal=shrink(kept.reveal,f);}
+      bitmap=shrink(bitmap,f);pixels=pixels(r.scene);
+     }
      boolean child=o.has("parent")&&!o.isNull("parent");float[] localOrigin=null;float localAngle=0;
      float[] pos=child?WallpaperContent.vector(o.opt("origin"),0,0):WallpaperContent.vector(o.opt("origin"),r.scene.width/2f,r.scene.height/2f),sz=WallpaperContent.vector(o.opt("size"),bitmap.getWidth(),bitmap.getHeight()),scale=WallpaperContent.vector(o.opt("scale"),1,1),angles=WallpaperContent.vector(o.opt("angles"),0,0,0),depth=WallpaperContent.vector(o.opt("parallaxDepth"),1,1);
+     if(text!=null)sz=new float[]{text.blockW,text.blockH};
      if(pos.length>=2&&angles.length>=3){localOrigin=new float[]{pos[0],pos[1]};localAngle=angles[2];}
      if(pos.length>=2&&scale.length>=2&&angles.length>=3){float[] world=world(a,o,byId,pos,scale,angles[2],r.scene.width,r.scene.height);pos=new float[]{world[0],world[1]};scale=new float[]{world[2],world[3]};angles=new float[]{angles[0],angles[1],world[4]};}
      if(pos.length<2||sz.length<2||scale.length<2||angles.length<3)throw new IOException("不完整的图层变换");
      if(scale[0]<=0||scale[1]<=0||Math.abs(angles[0])>.001||Math.abs(angles[1])>.001)throw new IOException("镜像或 3D 旋转");
-     WallpaperContent.Layer layer=new WallpaperContent.Layer();layer.name=o.optString("name","图层 "+(i+1));layer.w=sz[0]*scale[0];layer.h=sz[1]*scale[1];layer.x=pos[0]-layer.w/2;layer.y=r.scene.height-pos[1]-layer.h/2;layer.rotation=-(float)Math.toDegrees(angles[2]);layer.depth=Math.max(-2,Math.min(2,depth[0]));layer.alpha=(float)Math.max(0,Math.min(1,number(o.opt("alpha"),1)));layer.frames=frames;layer.objectId=o.has("id")?o.optInt("id"):-1;layer.visible=!startHidden;layer.baseW=sz[0];layer.baseH=sz[1];
+     WallpaperContent.Layer layer=new WallpaperContent.Layer();layer.name=o.optString("name","图层 "+(i+1));layer.w=sz[0]*scale[0];layer.h=sz[1]*scale[1];layer.x=pos[0]-layer.w/2;layer.y=r.scene.height-pos[1]-layer.h/2;layer.rotation=-(float)Math.toDegrees(angles[2]);layer.depth=Math.max(-2,Math.min(2,depth[0]));layer.alpha=(float)Math.max(0,Math.min(1,number(o.opt("alpha"),1)));layer.frames=frames;layer.compose=compose;layer.fullscreen=fullscreen;
+     float[] tint=WallpaperContent.vector(o.opt("color"),1,1,1);if(tint.length>=3)layer.tint=new float[]{tint[0],tint[1],tint[2]};
+     if(text!=null){layer.text=text;layer.fontData=text.fontData;layer.fontName=text.fontName;text.fontData=null;if(text.opaque)layer.tint=new float[]{1,1,1};}
+     String tintProperty=text!=null&&text.opaque?null:declared(bound(o.opt("color")),projectProperties);if(tintProperty!=null){layer.tintProperty=tintProperty;offer(tintProperty,new JSONObject().put("kind","color"),projectProperties,r);}
+     layer.baseW=sz[0];layer.baseH=sz[1];transformChain(o,byId,layer,projectProperties,r,r.scene.width,r.scene.height);
+     String alphaProperty=bound(o.opt("alpha"));if(alphaProperty!=null&&projectProperties.optJSONObject(alphaProperty)!=null){layer.alphaProperty=alphaProperty;offer(alphaProperty,new JSONObject().put("kind","alpha"),projectProperties,r);}layer.objectId=o.has("id")?o.optInt("id"):-1;layer.visible=!startHidden;layer.baseW=sz[0];layer.baseH=sz[1];
      if(child&&r.scriptScene!=null)layer.frame=world(a,o,byId,new float[]{0,0},new float[]{1,1},0,r.scene.width,r.scene.height);
      if(startHidden)r.scriptedHidden++;layer.when=shown.when;usedProperties(shown.when,projectProperties,r);layer.blend=colorBlend;layer.additive=additive;if(colorBlend!=0||additive)r.blended++;
      if(puppetModel!=null){
@@ -156,18 +202,28 @@ final class SceneAdapter {
        if(texX.length()>3&&!texX.isNull(3)&&!texX.optString(3).equals("util/white"))throw new IOException("X-ray 自定义不透明遮罩尚不支持");
        String sprite=texX.optString(2,"particle/halo_6");if(!sprite.equals("particle/halo_6")&&!sprite.equals("util/white")&&!sprite.equals("null"))throw new IOException("X-ray 自定义指针遮罩尚不支持");
        JSONObject constants=passX.optJSONObject("constantshadervalues");layer.revealSize=(float)Math.max(.01,Math.min(1,constants==null?.2:number(constants.opt("size"),.2)));
-       Bitmap second=WallpaperContent.bitmap(a.read(WallpaperContent.asset(a,reveal),32*1024*1024));if(pixels+(long)bitmap.getWidth()*bitmap.getHeight()+(long)second.getWidth()*second.getHeight()>16L*1024*1024){second.recycle();throw new IOException("X-ray 纹理超过内存预算");}
+       Bitmap second=WallpaperContent.bitmap(a.read(WallpaperContent.asset(a,reveal),32*1024*1024));if(pixels+(long)bitmap.getWidth()*bitmap.getHeight()+(long)second.getWidth()*second.getHeight()>budget.pixels()){second.recycle();throw new IOException("X-ray 纹理超过内存预算");}
        layer.reveal=second;pixels+=(long)second.getWidth()*second.getHeight();r.xrays++;r.effects.remove("xray");
       }catch(Exception failure){if(layer.reveal!=null){layer.reveal.recycle();layer.reveal=null;}r.drop("xray",failure.getMessage()==null?"无法读取":failure.getMessage());}
      }
      if(objectEffects!=null)for(int e=0;e<objectEffects.length();e++){
-      JSONObject effect=objectEffects.optJSONObject(e);if(effect==null||!visible(effect)||effect.optString("file").toLowerCase(Locale.ROOT).contains("xray"))continue;
+      JSONObject effect=objectEffects.optJSONObject(e);if(effect==null||effect.optString("file").toLowerCase(Locale.ROOT).contains("xray"))continue;
+      // Effects switched by an author property are kept and follow the phone setting; others honour their saved state.
+      JSONArray effectWhen=userCondition(effect.opt("visible"),projectProperties);if(effectWhen==null&&!visible(effect))continue;
       String name=SceneEffects.kind(effect);
-      try{if(layer.effects.size()>=8)throw new IOException("单个图层特效过多");if(includes==null)includes=SceneEffects.includes(a);layer.effects.add(SceneEffects.read(a,effect,includes));r.keep(name);}
+      try{if(layer.effects.size()>=24)throw new IOException("单个图层特效过多");if(includes==null)includes=SceneEffects.includes(a);java.util.List<SceneEffects.Effect> steps=SceneEffects.read(a,effect,includes,++r.effectGroups);if(layer.effects.size()+steps.size()>24){for(SceneEffects.Effect s:steps)s.recycle();throw new IOException("单个图层特效过多");}layer.effects.addAll(steps);if(effectWhen!=null){for(SceneEffects.Effect step:steps)step.when=effectWhen;offer(effectWhen.getJSONArray(0).optString(0),new JSONObject().put("kind","effect"),projectProperties,r);}for(SceneEffects.Effect step:steps)for(String property:step.bound.values())offer(property,new JSONObject().put("kind","uniform"),projectProperties,r);r.keep(name);if(steps.size()>1)r.multiPass++;}
       catch(InterruptedIOException stop){throw stop;}catch(Exception|OutOfMemoryError failure){r.drop(name,failure.getMessage()==null?"无法读取":failure.getMessage());}
      }
      layer.bitmap=bitmap;bitmap=null;pixels+=(long)layer.bitmap.getWidth()*layer.bitmap.getHeight();if(o.has("id"))outputIndex.put(o.optInt("id"),r.scene.layers.size());r.scene.layers.add(layer);if(layer.frames.size()>1)r.animations++;
     }catch(InterruptedIOException stop){throw stop;}catch(Exception e){r.skip(e.getMessage()==null?"图片无法解码":e.getMessage());}finally{if(bitmap!=null)bitmap.recycle();}
+   }
+   // Layers inside a composition layer are drawn into it: the nearest composition ancestor drawn earlier is their group.
+   for(int k=0;k<r.scene.layers.size();k++){
+    WallpaperContent.Layer l=r.scene.layers.get(k);JSONObject cur=byId.get(l.objectId);
+    for(int d=0;cur!=null&&d<32&&cur.has("parent")&&!cur.isNull("parent");d++){
+     cur=byId.get((int)number(cur.opt("parent"),-1));if(cur==null)break;Integer g=outputIndex.get(cur.optInt("id",-2));
+     if(g!=null&&g<k&&r.scene.layers.get(g).compose){l.group=g;break;}
+    }
    }
    // Children follow their parent's animated attachment only when that parent is drawn earlier as a skeletal mesh.
    for(var pending:attachSources.entrySet()){
@@ -182,7 +238,6 @@ final class SceneAdapter {
  /** Composes parent transforms: a child's origin is in its parent's scaled, rotated space. Returns {x,y,scaleX,scaleY,angle}. */
  /** A particle system as a full-canvas layer: its texture, simulation parameters and emitter transform in scene space. */
  static WallpaperContent.Layer particleLayer(ContentArchive a,JSONObject o,java.util.Map<Integer,JSONObject> byId,Report r)throws Exception {
-  if(r.scene.layers.size()>=64)throw new IOException("超过 64 层预算");
   JSONObject system=WallpaperContent.json(a,ContentArchive.path(o.getString("particle")));
   JSONArray children=system.optJSONArray("children");if(children!=null&&children.length()>0)r.particleChildren++;
   JSONArray renderers=system.optJSONArray("renderer");String renderer=renderers==null||renderers.length()==0?"sprite":renderers.optJSONObject(0).optString("name");
@@ -208,6 +263,9 @@ final class SceneAdapter {
   if(child&&r.scriptScene!=null)layer.frame=world(a,o,byId,new float[]{0,0},new float[]{1,1},0,w,h);
   JSONObject data=new JSONObject().put("system",system).put("additive","additive".equals(pass.optString("blending"))).put("transform",new JSONArray().put(world[0]).put(world[1]).put(world[2]).put(world[3]).put(world[4]));
   JSONObject override=o.optJSONObject("instanceoverride");if(override!=null)data.put("override",override);if(frames!=null)data.put("frames",frames);
+  if(override!=null)for(java.util.Iterator<String> k=override.keys();k.hasNext();){String n=declared(bound(override.opt(k.next())),r.declared);if(n!=null)offer(n,new JSONObject().put("kind","particle"),r.declared,r);}
+  String alphaProperty=declared(bound(o.opt("alpha")),r.declared);if(alphaProperty!=null){layer.alphaProperty=alphaProperty;offer(alphaProperty,new JSONObject().put("kind","alpha"),r.declared,r);}
+  transformChain(o,byId,layer,r.declared,r,w,h);
   layer.particleData=data.toString();return layer;
  }
  /** Longest canvas edge the phone needs at full detail: a 2400 px screen, with room for zoom and paging. */
@@ -229,18 +287,51 @@ final class SceneAdapter {
   Bitmap smaller=Bitmap.createScaledBitmap(bitmap,Math.max(1,Math.round(bitmap.getWidth()*factor)),Math.max(1,Math.round(bitmap.getHeight()*factor)),true);
   if(smaller!=bitmap)bitmap.recycle();return smaller;
  }
+ static final String GROUP_LAYER="合成层只用于分组，其中的图层照常显示";
+ /** Engine solid-colour layer: a flat rectangle in the object's colour; effects on it run as on any image. */
+ static Bitmap solidBitmap(JSONObject o){
+  float[] size=WallpaperContent.vector(o.opt("size"),256,256),color={1,1,1};
+  float w=Math.max(1,size.length>0?size[0]:256),h=Math.max(1,size.length>1?size[1]:256),k=Math.min(1,256f/Math.max(w,h));
+  int bw=Math.max(1,Math.round(w*k)),bh=Math.max(1,Math.round(h*k));
+  int argb=0xff000000|channel(color,0)<<16|channel(color,1)<<8|channel(color,2);int[] pixels=new int[bw*bh];java.util.Arrays.fill(pixels,argb);
+  return Bitmap.createBitmap(pixels,bw,bh,Bitmap.Config.ARGB_8888);
+ }
+ private static int channel(float[] c,int i){float v=c.length>i?c[i]:1;return Math.max(0,Math.min(255,Math.round(v*255)));}
  /** Image layers in the scene; particle layers have small textures and are counted separately. */
  static int imageLayers(WallpaperContent.Scene scene){int n=0;for(WallpaperContent.Layer l:scene.layers)if(l.particleData==null)n++;return n;}
  /**
   * The scene's mouse-driven camera becomes the phone's tilt parallax: on/off and influence come from the author's
   * camera settings (resolved from their properties), and a camera zoom above 1 becomes the default zoom.
   */
- static void camera(JSONObject general,JSONObject effects)throws JSONException {
+ static void camera(Report report,JSONObject effects)throws JSONException {
+  JSONObject general=report.general;JSONObject cam=report.cameraObject;
+  if(cam!=null){double cz=number(cam.opt("zoom"),1);if(cz>1.01)effects.put("zoom",Math.min(2.5,cz));
+  }
   Object parallax=value(general.opt("cameraparallax"));if(parallax!=null&&parallax!=JSONObject.NULL)effects.put("gyro",truthy(parallax));
   double influence=number(general.opt("cameraparallaxmouseinfluence"),-1),amount=number(general.opt("cameraparallaxamount"),-1);
   if(influence>=0)effects.put("strength",Math.max(.1,Math.min(1,influence*2)));
   if(amount>0)effects.put("layerDepth",Math.max(.25,Math.min(2,amount*10)));
   double zoom=number(general.opt("zoom"),1);if(zoom>1.01)effects.put("zoom",Math.min(2.5,zoom));
+  // The scene's clear colour fills what no layer covers (general.clearcolor when clearenabled).
+  if(!general.has("clearenabled")||truthy(value(general.opt("clearenabled")))){float[] c=WallpaperContent.vector(value(general.opt("clearcolor")),0,0,0);if(c.length>=3)effects.put("backgroundColor",String.format(Locale.ROOT,"#%02X%02X%02X",Math.round(Math.max(0,Math.min(1,c[0]))*255),Math.round(Math.max(0,Math.min(1,c[1]))*255),Math.round(Math.max(0,Math.min(1,c[2]))*255)));}
+ }
+ /** Camera shake (general.camerashake*), kept with the scene for the renderer. */
+ static JSONObject cameraBlock(Report report)throws JSONException {
+  JSONObject g=report.general==null?new JSONObject():report.general;if(!truthy(value(g.opt("camerashake"))))return null;
+  return new JSONObject().put("shake",new JSONObject().put("speed",number(g.opt("camerashakespeed"),3)).put("amplitude",number(g.opt("camerashakeamplitude"),.5)).put("roughness",number(g.opt("camerashakeroughness"),1)));
+ }
+ /**
+  * Scene bloom (general.bloom, bloomstrength, bloomthreshold, bloomtint), with the author properties any of them are
+  * bound to. Kept whenever bloom is on or switchable by a property.
+  */
+ static JSONObject bloomBlock(Report report,JSONObject projectProperties)throws JSONException {
+  JSONObject g=report.general==null?new JSONObject():report.general;String onProperty=declared(bound(g.opt("bloom")),projectProperties);
+  if(!truthy(value(g.opt("bloom")))&&onProperty==null)return null;
+  JSONObject b=new JSONObject().put("enabled",truthy(value(g.opt("bloom")))).put("strength",number(g.opt("bloomstrength"),2)).put("threshold",number(g.opt("bloomthreshold"),.65));
+  float[] tint=WallpaperContent.vector(value(g.opt("bloomtint")),1,1,1);b.put("tint",array(tint.length>=3?tint:new float[]{1,1,1}));
+  String[][] keys={{"bloom","enabledProperty"},{"bloomstrength","strengthProperty"},{"bloomthreshold","thresholdProperty"},{"bloomtint","tintProperty"}};
+  for(String[] k:keys){String p=declared(bound(g.opt(k[0])),projectProperties);if(p!=null){b.put(k[1],p);offer(p,new JSONObject().put("kind","bloom"),projectProperties,report);}}
+  report.bloom=true;return b;
  }
  /** Author properties from project.json: name → {type, value, text, options}. */
  static JSONObject projectProperties(ContentArchive a){
@@ -254,10 +345,16 @@ final class SceneAdapter {
  static void resolve(Object value,JSONObject properties)throws JSONException {
   if(value instanceof JSONObject o){
    Object user=o.opt("user");
-   if(user instanceof String name){JSONObject p=properties.optJSONObject(name);if(p!=null&&p.has("value")&&!"group".equals(p.optString("type"))&&!"text".equals(p.optString("type")))o.put("value",p.opt("value"));}
+   if(user instanceof String name){JSONObject p=properties.optJSONObject(name);if(p!=null&&p.has("value")&&!"group".equals(p.optString("type"))&&!"text".equals(p.optString("type")))o.put("value",shaped(o.opt("value"),p.opt("value")));}
    else if(user instanceof JSONObject bound){JSONObject p=properties.optJSONObject(bound.optString("name"));if(p!=null&&p.has("value"))o.put("value",String.valueOf(p.opt("value")).equals(bound.optString("condition")));}
    for(java.util.Iterator<String> keys=o.keys();keys.hasNext();)resolve(o.opt(keys.next()),properties);
   }else if(value instanceof JSONArray list)for(int i=0;i<list.length();i++)resolve(list.opt(i),properties);
+ }
+ /** A scalar slider bound to a vector ("x y z") applies to every component, as Wallpaper Engine does. */
+ static Object shaped(Object saved,Object value){
+  if(!(saved instanceof String text)||!(value instanceof Number||value instanceof String v&&v.trim().matches("-?[0-9.eE+-]+")))return value;
+  String[] parts=text.trim().split("[\\s,]+");if(parts.length<2)return value;
+  String one=String.valueOf(value).trim();StringBuilder out=new StringBuilder();for(int i=0;i<parts.length;i++){if(i>0)out.append(' ');out.append(one);}return out.toString();
  }
  /** Whether an object is drawn: fixed visibility along its parents, plus the author-property conditions that can change it. */
  static final class Visibility {boolean fixed=true;final JSONArray when=new JSONArray();}
@@ -289,28 +386,121 @@ final class SceneAdapter {
  /** Records the switch-like properties layers depend on, with a readable label. */
  static void usedProperties(JSONArray when,JSONObject properties,Report r)throws JSONException {
   if(when.length()>0)r.propertyLayers++;
-  for(int i=0;i<when.length();i++){
-   String name=when.getJSONArray(i).optString(0);if(r.properties.has(name))continue;JSONObject p=properties.optJSONObject(name);if(p==null)continue;
-   String type=p.optString("type");if(!type.equals("bool")&&!type.equals("combo"))continue;
-   JSONObject out=new JSONObject().put("type",type).put("value",p.opt("value")).put("label",label(p.optString("text",name)));
-   if(type.equals("combo")){JSONArray options=new JSONArray();JSONArray list=p.optJSONArray("options");if(list!=null)for(int k=0;k<list.length();k++){JSONObject op=list.optJSONObject(k);if(op!=null)options.put(new JSONArray().put(label(op.optString("label"))).put(String.valueOf(op.opt("value"))));}out.put("options",options);}
-   out.put("order",p.optInt("order",0));r.properties.put(name,out);
+  for(int i=0;i<when.length();i++)offer(when.getJSONArray(i).optString(0),new JSONObject().put("kind","visible"),properties,r);
+ }
+ /**
+  * Every property the author declared (project.json), as Wallpaper Engine's settings panel lists them, with what each
+  * drives on the phone. Script parameters count only for objects the phone draws; text notes and shortcuts are left out.
+  */
+ static JSONObject offered(Report report)throws JSONException {
+  java.util.Set<Integer> drawn=new java.util.HashSet<>();for(WallpaperContent.Layer l:report.scene.layers)drawn.add(l.objectId);
+  JSONObject out=new JSONObject();
+  for(java.util.Iterator<String> k=report.declared.keys();k.hasNext();){
+   String name=k.next();JSONObject p=report.declared.optJSONObject(name);if(p==null)continue;String type=p.optString("type");
+   if(type.isEmpty()||name.equals("schemecolor"))continue;
+   // Authors draw section dividers as colour or text properties whose label is only an image.
+   String rawText=p.optString("text","");if(rawText.toLowerCase(java.util.Locale.ROOT).contains("<img")&&label(rawText).equals("作者设置")&&(type.equals("color")||type.equals("text"))){out.put(name,new JSONObject().put("type","divider").put("order",p.optInt("order",0)).put("label",""));continue;}
+   String text=type.equals("text")?note(p.optString("text","")):label(p.optString("text",name));if(type.equals("text")&&text.isEmpty())continue;
+   JSONObject o=new JSONObject().put("type",type).put("value",p.opt("value")).put("label",text).put("order",p.optInt("order",0));
+   if(!p.optString("condition").isBlank())o.put("condition",p.optString("condition"));
+   if(type.equals("combo")){JSONArray options=new JSONArray();JSONArray list=p.optJSONArray("options");if(list!=null)for(int i=0;i<list.length();i++){JSONObject op=list.optJSONObject(i);if(op!=null)options.put(new JSONArray().put(label(op.optString("label"))).put(String.valueOf(op.opt("value"))));}o.put("options",options);}
+   if(type.equals("slider")){double min=p.optDouble("min",0),max=p.optDouble("max",1);if(!(max>min))continue;o.put("min",min).put("max",max);}
+   JSONArray kept=new JSONArray();JSONObject drives=report.properties.optJSONObject(name);JSONArray targets=drives==null?null:drives.optJSONArray("targets");
+   if(targets!=null)for(int i=0;i<targets.length();i++){JSONObject t=targets.getJSONObject(i);if(!t.optString("kind").equals("parameter")||drawn.contains(t.optInt("object",-2)))kept.put(t);}
+   o.put("targets",kept).put("effective",kept.length()>0);out.put(name,o);
   }
+  return out;
+ }
+ /** Name of the author property a value is bound to ({"user": name, "value": …}), or null. */
+ static String bound(Object v){return v instanceof JSONObject b&&b.opt("user") instanceof String n&&!n.isEmpty()?n:null;}
+ /** Records what an author property drives on the phone; the settings list itself comes from the declarations in offered(). */
+ static void offer(String name,JSONObject target,JSONObject properties,Report r)throws JSONException {
+  if(name==null||properties.optJSONObject(name)==null)return;
+  JSONObject out=r.properties.optJSONObject(name);if(out==null){out=new JSONObject().put("targets",new JSONArray());r.properties.put(name,out);}
+  JSONArray targets=out.getJSONArray("targets");for(int i=0;i<targets.length();i++)if(targets.optJSONObject(i).toString().equals(target.toString()))return;
+  targets.put(target);
+ }
+ /** The property name when a value is bound to a property the author declared, else null. */
+ static String declared(String name,JSONObject properties){return name!=null&&properties.optJSONObject(name)!=null?name:null;}
+ /** [[name, condition or null]] for a visibility bound to a declared property, else null. */
+ static JSONArray userCondition(Object visible,JSONObject properties)throws JSONException {
+  if(!(visible instanceof JSONObject b))return null;Object user=b.opt("user");
+  if(user instanceof JSONObject c){String n=declared(c.optString("name"),properties);return n==null?null:new JSONArray().put(new JSONArray().put(n).put(c.optString("condition")));}
+  String n=declared(bound(visible),properties);return n==null?null:new JSONArray().put(new JSONArray().put(n).put(JSONObject.NULL));
+ }
+ /**
+  * Local transforms from the object up to the scene root, kept when any of them is bound to an author property so the
+  * phone can recompose the layer's place when the setting changes. Layers placed on a skeleton are positioned by it instead.
+  */
+ static void transformChain(JSONObject o,java.util.Map<Integer,JSONObject> byId,WallpaperContent.Layer layer,JSONObject props,Report r,int w,int h)throws JSONException {
+  java.util.List<float[]> nodes=new java.util.ArrayList<>();java.util.List<String[]> binds=new java.util.ArrayList<>();JSONObject cur=o;
+  for(int d=0;cur!=null&&d<32;d++){
+   if(!cur.optString("attachment","").isEmpty())return;
+   boolean child=cur.has("parent")&&!cur.isNull("parent");
+   float[] origin=child?WallpaperContent.vector(cur.opt("origin"),0,0):WallpaperContent.vector(cur.opt("origin"),w/2f,h/2f),scale=WallpaperContent.vector(cur.opt("scale"),1,1),angles=WallpaperContent.vector(cur.opt("angles"),0,0,0);
+   if(origin.length<2||scale.length<2)return;
+   nodes.add(new float[]{origin[0],origin[1],scale[0],scale[1],angles.length>=3?angles[2]:0});
+   binds.add(new String[]{declared(bound(cur.opt("origin")),props),declared(bound(cur.opt("scale")),props),declared(bound(cur.opt("angles")),props)});
+   if(!child)break;cur=byId.get((int)number(cur.opt("parent"),-1));if(cur==null)return;
+  }
+  boolean any=false;for(String[] b:binds)for(String n:b)if(n!=null){any=true;offer(n,new JSONObject().put("kind","transform"),props,r);}
+  if(any){layer.chain=nodes.toArray(new float[0][]);layer.chainBind=binds.toArray(new String[0][]);}
+ }
+ /** Mouse-parallax, zoom and camera-position settings become the phone's tilt parallax, zoom and picture position. */
+ static void cameraSettings(JSONObject root,JSONObject props,Report r)throws JSONException {
+  JSONObject g=r.general;Object parallax=g.opt("cameraparallax");
+  if(parallax instanceof JSONObject b&&b.opt("user") instanceof JSONObject c)offer(c.optString("name"),new JSONObject().put("kind","option").put("key","gyro").put("condition",c.optString("condition")),props,r);
+  else offer(bound(parallax),new JSONObject().put("kind","option").put("key","gyro"),props,r);
+  offer(bound(g.opt("cameraparallaxmouseinfluence")),new JSONObject().put("kind","option").put("key","strength"),props,r);
+  offer(bound(g.opt("zoom")),new JSONObject().put("kind","option").put("key","zoom"),props,r);
+  JSONArray objects=root.optJSONArray("objects");if(objects==null)return;
+  for(int i=0;i<objects.length();i++){
+   JSONObject o=objects.optJSONObject(i);if(o==null||!o.has("camera"))continue;r.cameraObject=o;
+   offer(bound(o.opt("zoom")),new JSONObject().put("kind","option").put("key","zoom"),props,r);
+   break;
+  }
+ }
+ /** An author note (HTML): its readable lines, links and images dropped, at most three lines. */
+ static String note(String html){
+  String s=html.replaceAll("(?i)<br\\s*/?>|<hr\\s*/?>|</p>|</div>|</h[1-6]>|</center>",String.valueOf((char)10)).replaceAll("<[^>]*>","").replaceAll("&nbsp;?"," ").replace("&amp;","&").replace("&lt;","<").replace("&gt;",">");
+  StringBuilder out=new StringBuilder();int lines=0;
+  for(String line:s.split(String.valueOf((char)10))){String t=line.trim();if(t.isEmpty()||t.matches("(?i).*https?://.*"))continue;if(out.length()>0)out.append((char)10);out.append(t.length()>60?t.substring(0,60):t);if(++lines==3)break;}
+  return out.toString();
+ }
+ /** A text object as Wallpaper Engine saves it (text layer fields), with its font file when the scene or engine has it. */
+ private static SceneText text(ContentArchive a,JSONObject o,JSONObject projectProperties,Report r)throws Exception {
+  SceneText t=new SceneText();Object raw=o.opt("text");Object v=value(raw);t.value=v==null||v==JSONObject.NULL?"":String.valueOf(v);
+  String valueProperty=declared(bound(raw),projectProperties);if(valueProperty!=null){t.valueProperty=valueProperty;offer(valueProperty,new JSONObject().put("kind","text"),projectProperties,r);}
+  t.pointsize=(float)Math.max(.1,Math.min(1000,number(o.opt("pointsize"),32)));
+  String sizeProperty=declared(bound(o.opt("pointsize")),projectProperties);if(sizeProperty!=null){t.sizeProperty=sizeProperty;offer(sizeProperty,new JSONObject().put("kind","text"),projectProperties,r);}
+  t.align=o.optString("horizontalalign","center").toLowerCase(Locale.ROOT);t.valign=o.optString("verticalalign","center").toLowerCase(Locale.ROOT);
+  t.limitrows=dev.workshopvideo.core.PropertyCondition.truthy(value(o.opt("limitrows")));t.maxrows=(int)Math.max(1,Math.min(1000,number(o.opt("maxrows"),1)));
+  t.limitwidth=dev.workshopvideo.core.PropertyCondition.truthy(value(o.opt("limitwidth")));t.maxwidth=(float)Math.max(1,number(o.opt("maxwidth"),500));
+  t.opaque=dev.workshopvideo.core.PropertyCondition.truthy(value(o.opt("opaquebackground")));
+  float[] bg=WallpaperContent.vector(o.opt("backgroundcolor"),0,0,0),fg=WallpaperContent.vector(o.opt("color"),1,1,1);if(bg.length>=3)t.background=bg;if(fg.length>=3)t.color=fg;
+  String font=String.valueOf(value(o.opt("font")));t.fontName=font;
+  if(!font.isEmpty()&&!font.equals("null")&&!font.startsWith("systemfont_"))try{t.fontData=r.fonts.get(font);if(t.fontData==null){t.fontData=a.read(ContentArchive.path(font),SceneText.MAX_FONT_BYTES);r.fonts.put(font,t.fontData);}}catch(InterruptedIOException stop){throw stop;}catch(IOException missing){if(r.missingFonts.size()<6)r.missingFonts.add(font.substring(font.lastIndexOf('/')+1));}
+  android.graphics.Typeface shared=r.typefaces.get(font);if(shared==null){shared=SceneText.typeface(t.fontData,font);r.typefaces.put(font,shared);}t.typeface=shared;
+  return t;
  }
  /** Property text is HTML; keep the first readable line (authors often put Chinese and English on two lines). */
  static String label(String html){
-  String s=html.replaceAll("(?i)<br\\s*/?>|<hr\\s*/?>|</p>|</div>","\n").replaceAll("<[^>]*>","").replace("&nbsp;"," ").replace("&amp;","&").replace("&lt;","<").replace("&gt;",">");
-  for(String line:s.split("\n")){String t=line.replaceAll("[\\p{So}\\p{Cn}]","").trim();if(!t.isEmpty())return t.length()>40?t.substring(0,40):t;}
-  return "作者设置";
+  String s=html.replaceAll("(?i)<br\\s*/?>|<hr\\s*/?>|</p>|</div>|</h[1-6]>",String.valueOf((char)10)).replaceAll("<[^>]*>","").replaceAll("&nbsp;?"," ").replace("&amp;","&").replace("&lt;","<").replace("&gt;",">");
+  StringBuilder out=new StringBuilder();int lines=0;
+  for(String line:s.split(String.valueOf((char)10))){String t=line.replaceAll("[\\p{So}\\p{Cn}\\uFE0F]","").trim();if(t.isEmpty())continue;if(out.length()>0)out.append((char)10);out.append(t.length()>40?t.substring(0,40):t);if(++lines==2)break;}
+  return out.length()==0?"作者设置":out.toString();
  }
  /** True when a script can show this hidden layer: its own visibility is scripted, or a script names it. */
+ private static final java.util.regex.Pattern SELF_VISIBLE=java.util.regex.Pattern.compile("thisLayer\\s*\\.\\s*visible\\s*=[^=]");
  static boolean scriptedVisibility(JSONObject o,String sources){
   Object v=o.opt("visible");if(v instanceof JSONObject&&((JSONObject)v).opt("script") instanceof String)return true;
+  // A property script of the layer itself that sets thisLayer.visible (e.g. day/night switches on a hidden layer).
+  for(java.util.Iterator<String> k=o.keys();k.hasNext();){Object p=o.opt(k.next());if(p instanceof JSONObject&&((JSONObject)p).opt("script") instanceof String src&&SELF_VISIBLE.matcher(src).find())return true;}
   String name=o.optString("name","");return !name.isEmpty()&&(sources.contains("'"+name+"'")||sources.contains("\""+name+"\"")||sources.contains("`"+name+"`"));
  }
  private static JSONArray array(float[] v)throws JSONException{JSONArray out=new JSONArray();for(float x:v)out.put(Float.isFinite(x)?(double)x:0);return out;}
  /** Saved state of every object, its property scripts and the author's user-property defaults. */
- static JSONObject scriptScene(ContentArchive a,JSONArray objects,int width,int height,StringBuilder sources)throws Exception {
+ static JSONObject scriptScene(ContentArchive a,JSONArray objects,int width,int height,StringBuilder sources,JSONObject projectProperties,Report report)throws Exception {
   JSONArray list=new JSONArray();
   for(int i=0;i<objects.length();i++){
    JSONObject o=objects.optJSONObject(i);if(o==null)continue;boolean child=o.has("parent")&&!o.isNull("parent");
@@ -318,19 +508,32 @@ final class SceneAdapter {
    d.put("origin",array(child?WallpaperContent.vector(o.opt("origin"),0,0,0):WallpaperContent.vector(o.opt("origin"),width/2f,height/2f,0)));
    d.put("scale",array(WallpaperContent.vector(o.opt("scale"),1,1,1))).put("angles",array(WallpaperContent.vector(o.opt("angles"),0,0,0))).put("size",array(WallpaperContent.vector(o.opt("size"),0,0)));
    d.put("alpha",number(o.opt("alpha"),1)).put("visible",visible(o)).put("solid",o.optBoolean("solid"));
-   d.put("kind",o.has("particle")&&!o.isNull("particle")?"particle":o.has("text")&&!o.isNull("text")?"text":o.has("sound")&&!o.isNull("sound")?"sound":o.has("image")&&!o.isNull("image")?"image":"other");
+   if(o.has("text")&&!o.isNull("text")){Object tv=value(o.opt("text"));d.put("text",tv==null||tv==JSONObject.NULL?"":String.valueOf(tv)).put("pointsize",number(o.opt("pointsize"),32)).put("color",array(WallpaperContent.vector(o.opt("color"),1,1,1)));
+    for(String k:new String[]{"font","horizontalalign","verticalalign","anchor"})d.put(k,o.optString(k,""));d.put("padding",number(o.opt("padding"),0)).put("maxrows",number(o.opt("maxrows"),1)).put("maxwidth",number(o.opt("maxwidth"),500));}
+   if(!o.optString("attachment","").isEmpty())d.put("attachment",o.optString("attachment"));
+   if(o.has("camera")){d.put("zoom",number(o.opt("zoom"),1)).put("fov",number(o.opt("fov"),50));}
+   d.put("kind",o.has("camera")?"camera":o.has("particle")&&!o.isNull("particle")?"particle":o.has("text")&&!o.isNull("text")?"text":o.has("sound")&&!o.isNull("sound")?"sound":o.has("image")&&!o.isNull("image")?"image":"other");
    JSONObject scripts=new JSONObject();
    for(java.util.Iterator<String> keys=o.keys();keys.hasNext();){
     String key=keys.next();Object v=o.opt(key);if(!(v instanceof JSONObject))continue;Object source=((JSONObject)v).opt("script");
     if(!(source instanceof String)||((String)source).isBlank())continue;
-    JSONObject properties=((JSONObject)v).optJSONObject("scriptproperties");scripts.put(key,new JSONObject().put("source",source).put("properties",properties==null?new JSONObject():properties));sources.append(source).append('\n');
+    JSONObject properties=((JSONObject)v).optJSONObject("scriptproperties");
+    String text=(String)source;
+    if(text.contains("userProperties")||text.contains("applyUserProperties"))for(java.util.Iterator<String> names=projectProperties.keys();names.hasNext();){
+     String n=names.next();if(n.length()<3)continue;String q=java.util.regex.Pattern.quote(n);
+     if(java.util.regex.Pattern.compile("\\."+q+"\\b|\\[\\s*['\"]"+q+"['\"]\\s*\\]").matcher(text).find())offer(n,new JSONObject().put("kind","parameter").put("object",o.optInt("id",-1)),projectProperties,report);
+    }
+    if(properties!=null)for(java.util.Iterator<String> pk=properties.keys();pk.hasNext();)offer(bound(properties.opt(pk.next())),new JSONObject().put("kind","parameter").put("object",o.optInt("id",-1)),projectProperties,report);scripts.put(key,new JSONObject().put("source",source).put("properties",properties==null?new JSONObject():properties));sources.append(source).append('\n');
    }
    if(scripts.length()>0)d.put("scripts",scripts);list.put(d);
   }
   JSONObject properties=new JSONObject();
   try{if(a.has("project.json")){JSONObject general=WallpaperContent.json(a,"project.json").optJSONObject("general");JSONObject all=general==null?null:general.optJSONObject("properties");
    if(all!=null)for(java.util.Iterator<String> keys=all.keys();keys.hasNext();){String key=keys.next();JSONObject p=all.optJSONObject(key);if(p!=null&&p.has("value"))properties.put(key,p.opt("value"));}}}catch(Exception unreadable){}
-  return new JSONObject().put("width",width).put("height",height).put("properties",properties).put("objects",list);
+  // Scene fields scripts read through thisScene (IScene), with bound values resolved.
+  JSONObject general=new JSONObject();JSONObject saved=report.general==null?new JSONObject():report.general;
+  for(java.util.Iterator<String> k=saved.keys();k.hasNext();){String key=k.next();Object v=value(saved.opt(key));if(v instanceof String||v instanceof Number||v instanceof Boolean)general.put(key,v);}
+  return new JSONObject().put("width",width).put("height",height).put("properties",properties).put("general",general).put("objects",list);
  }
  /** Rest-pose attachment points of a puppet layer's skeleton, by attachment name. */
  static java.util.Map<String,dev.workshopvideo.core.PuppetSkeleton.Point> attachments(ContentArchive archive,JSONObject layer)throws Exception {
@@ -363,22 +566,35 @@ final class SceneAdapter {
  /** Effects are translated here; without a translator, or when one is rejected, only that effect is left out. */
  static void write(Report report,File target,SceneEffects.Translator translator)throws Exception {
   if(!report.usable())throw new IOException("此场景无法生成手机适配版");
-  for(WallpaperContent.Layer l:report.scene.layers)for(java.util.Iterator<SceneEffects.Effect> it=l.effects.iterator();it.hasNext();){
-   SceneEffects.Effect effect=it.next();if(Thread.currentThread().isInterrupted())throw new InterruptedIOException("适配已暂停");
-   java.util.ArrayList<String> failures=new java.util.ArrayList<>();
-   if(translator!=null&&SceneEffects.translate(effect,translator,failures))continue;
-   it.remove();effect.recycle();report.unkeep(effect.name);report.drop(effect.name,translator==null?"此设备不支持特效转换":failures.isEmpty()?"转换失败":failures.get(0).substring(effect.name.length()+1));
+  // A multi-pass effect runs only when every one of its passes translated.
+  for(WallpaperContent.Layer l:report.scene.layers){
+   java.util.Set<Integer> failed=new java.util.HashSet<>();
+   for(SceneEffects.Effect effect:l.effects){
+    if(Thread.currentThread().isInterrupted())throw new InterruptedIOException("适配已暂停");if(failed.contains(effect.group))continue;
+    java.util.ArrayList<String> failures=new java.util.ArrayList<>();
+    if(translator!=null&&SceneEffects.translate(effect,translator,failures))continue;
+    failed.add(effect.group);report.unkeep(effect.name);report.drop(effect.name,translator==null?"此设备不支持特效转换":failures.isEmpty()?"转换失败":failures.get(0).substring(Math.min(failures.get(0).length(),effect.name.length()+1)));
+   }
+   for(java.util.Iterator<SceneEffects.Effect> it=l.effects.iterator();it.hasNext();){SceneEffects.Effect effect=it.next();if(failed.contains(effect.group)){it.remove();effect.recycle();}}
   }
-  fit(report.scene,LOAD_BUDGET);
+  fit(report.scene,dev.workshopvideo.core.SceneBudget.current().pixels());
   JSONObject root=new JSONObject().put("format","WallpaperMobileScene/1").put("width",report.scene.width).put("height",report.scene.height).put("adapted",true).put("adaptation",report.describe());
-  JSONObject effects=EffectOptions.normalize(null);effects.put("gyro",true);effects.put("touch",true);camera(report.general,effects);root.put("effects",effects);if(report.properties.length()>0)root.put("properties",report.properties);JSONArray layers=new JSONArray();
+  JSONObject effects=EffectOptions.normalize(null);effects.put("gyro",true);effects.put("touch",true);camera(report,effects);root.put("effects",effects);JSONObject cameraBlock=cameraBlock(report);if(cameraBlock!=null)root.put("camera",cameraBlock);JSONObject bloomBlock=bloomBlock(report,report.declared);if(bloomBlock!=null)root.put("bloom",bloomBlock);JSONObject offered=offered(report);if(offered.length()>0)root.put("properties",offered);JSONArray layers=new JSONArray();
   boolean done=false;try{
-   try(ZipOutputStream zip=new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(target)))){int index=0;for(WallpaperContent.Layer l:report.scene.layers){if(Thread.currentThread().isInterrupted())throw new InterruptedIOException("适配已暂停");String name="layers/"+(index++)+".png";zip.putNextEntry(new ZipEntry(name));if(!l.bitmap.compress(Bitmap.CompressFormat.PNG,100,zip))throw new IOException("无法保存图层");zip.closeEntry();JSONObject layer=new JSONObject().put("file",name).put("name",l.name).put("x",l.x).put("y",l.y).put("width",l.w).put("height",l.h).put("rotation",l.rotation).put("depth",l.depth).put("opacity",l.alpha);if(l.frames.size()>1){JSONArray frames=new JSONArray();for(var f:l.frames)frames.put(new JSONArray().put(f.u0()).put(f.v0()).put(f.u1()).put(f.v1()).put(f.seconds()));layer.put("frames",frames);}if(!l.effects.isEmpty())writeEffects(zip,l,index-1,layer);
+   try(ZipOutputStream zip=new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(target)))){java.util.IdentityHashMap<byte[],String> fontFiles=new java.util.IdentityHashMap<>();int index=0;for(WallpaperContent.Layer l:report.scene.layers){if(Thread.currentThread().isInterrupted())throw new InterruptedIOException("适配已暂停");String name="layers/"+(index++)+".png";zip.putNextEntry(new ZipEntry(name));if(!l.bitmap.compress(Bitmap.CompressFormat.PNG,100,zip))throw new IOException("无法保存图层");zip.closeEntry();JSONObject layer=new JSONObject().put("file",name).put("name",l.name).put("x",l.x).put("y",l.y).put("width",l.w).put("height",l.h).put("rotation",l.rotation).put("depth",l.depth).put("opacity",l.alpha);if(l.frames.size()>1){JSONArray frames=new JSONArray();for(var f:l.frames)frames.put(new JSONArray().put(f.u0()).put(f.v0()).put(f.u1()).put(f.v1()).put(f.seconds()));layer.put("frames",frames);}if(!l.effects.isEmpty())writeEffects(zip,l,index-1,layer);
     if(l.puppet!=null){String mdl="layers/"+(index-1)+".mdl";zip.putNextEntry(new ZipEntry(mdl));zip.write(l.puppetData);zip.closeEntry();layer.put("puppet",mdl).put("puppetSize",new JSONArray().put(l.puppetW).put(l.puppetH));
      JSONArray tracks=new JSONArray();for(var t:l.tracks)tracks.put(new JSONArray().put(t.animation()).put(t.rate()).put(t.blend()).put(t.additive()));if(tracks.length()>0)layer.put("tracks",tracks);}
     if(l.particleData!=null){String file="layers/"+(index-1)+"-particles.json";zip.putNextEntry(new ZipEntry(file));zip.write(l.particleData.getBytes(StandardCharsets.UTF_8));zip.closeEntry();layer.put("particlesFile",file);}
-    if(report.scriptScene!=null){layer.put("objectId",l.objectId).put("base",new JSONArray().put(l.baseW).put(l.baseH));if(!l.visible)layer.put("visible",false);if(l.frame!=null)layer.put("frame",array(l.frame));}
+    layer.put("objectId",l.objectId).put("base",new JSONArray().put(l.baseW).put(l.baseH));if(!l.visible)layer.put("visible",false);if(l.frame!=null)layer.put("frame",array(l.frame));
+    if(l.tint[0]!=1||l.tint[1]!=1||l.tint[2]!=1)layer.put("tint",array(l.tint));if(l.tintProperty!=null)layer.put("tintProperty",l.tintProperty);
+    if(l.chain!=null){JSONArray chain=new JSONArray();for(int c=0;c<l.chain.length;c++){JSONArray b=new JSONArray();for(String n:l.chainBind[c])b.put(n==null?JSONObject.NULL:n);chain.put(new JSONArray().put(array(l.chain[c])).put(b));}layer.put("chain",chain);}
     if(l.when!=null&&l.when.length()>0)layer.put("when",l.when);
+    if(l.alphaProperty!=null)layer.put("alphaProperty",l.alphaProperty);
+    if(l.text!=null){
+     l.text.density=l.text.blockW>0?l.bitmap.getWidth()/l.text.blockW:1;layer.put("textLayer",l.text.json());if(l.fontName!=null)layer.put("fontName",l.fontName);
+     if(l.fontData!=null){String file=fontFiles.get(l.fontData);if(file==null){file="layers/"+(index-1)+"-font";zip.putNextEntry(new ZipEntry(file));zip.write(l.fontData);zip.closeEntry();fontFiles.put(l.fontData,file);}layer.put("fontFile",file);}
+    }
+    if(l.compose)layer.put("compose",true);if(l.fullscreen)layer.put("fullscreen",true);if(l.group>=0)layer.put("group",l.group);
     if(l.blend!=0)layer.put("blend",l.blend);if(l.additive)layer.put("additive",true);
     if(l.attachParent>=0)layer.put("attach",new JSONObject().put("layer",l.attachParent).put("name",l.attachName).put("x",l.attachX).put("y",l.attachY).put("angle",l.attachAngle));if(l.reveal!=null){String reveal="layers/xray-"+index+".png";zip.putNextEntry(new ZipEntry(reveal));if(!l.reveal.compress(Bitmap.CompressFormat.PNG,100,zip))throw new IOException("无法保存 X-ray 图层");zip.closeEntry();layer.put("xrayFile",reveal).put("xraySize",l.revealSize);}layers.put(layer);}root.put("layers",layers);if(report.scriptScene!=null){zip.putNextEntry(new ZipEntry("scripts.json"));zip.write(report.scriptScene.toString().getBytes(StandardCharsets.UTF_8));zip.closeEntry();root.put("scripts","scripts.json");}zip.putNextEntry(new ZipEntry("wallpaper-mobile.json"));zip.write(root.toString().getBytes(StandardCharsets.UTF_8));zip.closeEntry();}
    try(WallpaperContent.Scene verify=WallpaperContent.scene(target)){if(verify.layers.size()!=layers.length())throw new IOException("适配版校验未通过");}done=true;
@@ -397,7 +613,7 @@ final class SceneAdapter {
   String file="layers/"+index+"-effects.json";zip.putNextEntry(new ZipEntry(file));zip.write(list.toString().getBytes(StandardCharsets.UTF_8));zip.closeEntry();layer.put("effectsFile",file);
  }
  /** Pixels the phone may decode for one scene (layers, X-ray images and effect masks), as WallpaperContent enforces. */
- static final long LOAD_BUDGET=16L*1024*1024;
+ static long loadBudget(){return dev.workshopvideo.core.SceneBudget.current().pixels();}
  /** Shrinks effect masks first (they only weight motion), then all images evenly, until the scene fits the load budget. */
  static void fit(WallpaperContent.Scene scene,long budget){
   long target=budget*15/16;

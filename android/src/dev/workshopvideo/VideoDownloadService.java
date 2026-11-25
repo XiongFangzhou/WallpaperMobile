@@ -117,11 +117,13 @@ public final class VideoDownloadService extends Service {
                 public void check()throws Exception {ensureRunning(id);}
             });
             ensureRunning(id);app.change(id,"state","saving");app.change(id,"message","正在解析资源与检查兼容性…");
-            String kind=plan.type().equals("video")?"video":"image";boolean adapted=false;String adaptationReport="";
+            String kind=plan.type().equals("video")?"video":"image";boolean adapted=false,keptOriginal=false;String adaptationReport="";
             JSONObject effects=EffectOptions.normalize(null);
             try {
                 if(WallpaperContent.archive(raw)){
                     app.change(id,"message","正在自动适配手机壁纸…");
+                    // Keep the original package: later converter versions redo the scene from it without downloading again.
+                    app.keepOriginal(id,raw);keptOriginal=true;
                     SceneDownload.Prepared prepared;try(JsShaderTranslator translator=new JsShaderTranslator(this)){prepared=SceneDownload.prepare(raw,temporary,workspace,()->ensureRunning(id),translator);}
                     kind=prepared.kind();effects=prepared.effects();adapted=prepared.adapted();adaptationReport=prepared.report();
                 }else if(plan.bundle())throw new SceneDownload.Rejected("场景没有可解析的资源包",null);
@@ -142,7 +144,7 @@ public final class VideoDownloadService extends Service {
             synchronized(app){JSONObject saved=app.job(id);VideoApp.put(saved,"state","saving");
                 VideoApp.put(saved,"storage","private");VideoApp.put(saved,"uri",app.videoUri(id).toString());
                 VideoApp.put(saved,"kind",kind);VideoApp.put(saved,"compatible",true);VideoApp.put(saved,"compatibilityReason","");
-                VideoApp.put(saved,"officialPackage",false);VideoApp.put(saved,"adapted",adapted);VideoApp.put(saved,"adaptationReport",adaptationReport);
+                VideoApp.put(saved,"officialPackage",false);VideoApp.put(saved,"adapted",adapted);if(keptOriginal)app.stampConversion(saved);VideoApp.put(saved,"adaptationReport",adaptationReport);
                 VideoApp.put(saved,"effects",effects);VideoApp.put(saved,"sourceType",plan.type());
                 VideoApp.put(saved,"name",name);VideoApp.put(saved,"size",temporary.length());
                 VideoApp.put(saved,"done",plan.total());VideoApp.put(saved,"total",plan.total());VideoApp.put(saved,"sha1",sha1);VideoApp.put(saved,"savedAt",System.currentTimeMillis());app.save(saved);}
@@ -150,7 +152,7 @@ public final class VideoDownloadService extends Service {
         } catch(Throwable e) {
             if(!app.job(id).optString("state").equals("saved")){
                 boolean stopped=e instanceof InterruptedException||cancelled(id);if(stopped)Thread.interrupted();
-                if(e instanceof SceneDownload.Rejected&&!stopped){try{WorkshopAssets.clear(workspace);java.nio.file.Files.deleteIfExists(app.partial(id).toPath());}catch(IOException cleanup){e.addSuppressed(cleanup);}}String state=stopped?app.job(id).optBoolean("discardRequested")?"canceling":"paused":"error";
+                if(e instanceof SceneDownload.Rejected&&!stopped){try{WorkshopAssets.clear(workspace);java.nio.file.Files.deleteIfExists(app.partial(id).toPath());java.nio.file.Files.deleteIfExists(app.original(id).toPath());}catch(IOException cleanup){e.addSuppressed(cleanup);}}String state=stopped?app.job(id).optBoolean("discardRequested")?"canceling":"paused":"error";
                 app.change(id,"state",state);app.change(id,"error",stopped?"":VideoApp.error(e));if(stopped)app.change(id,"message",state.equals("canceling")?"正在取消并清理…":"已暂停，可继续下载");
             }
         } finally {

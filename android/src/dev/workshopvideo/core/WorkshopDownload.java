@@ -46,17 +46,46 @@ public final class WorkshopDownload {
             throw new IOException("该作品未提供 Steam 内容清单，暂不支持直接下载。");
         // Wallpaper Engine's workshop depot uses the application ID. A denied
         // key or manifest request is surfaced instead of bypassing ownership.
-        depot=WorkshopQuery.APP_ID;
-        progress.update(0,0,"请求作品下载权限…");
+        return open(WorkshopQuery.APP_ID,item.getHcontentFile(),"作品");
+    }
+
+    /** Wallpaper Engine's own content depot: its shipped assets (shaders, util models, engine textures). */
+    public static final int ENGINE_DEPOT=431961;
+
+    /** Current public manifest of the engine depot, read from the app's product info with the owner's access token. */
+    public long engineManifestId() throws Exception {
+        var apps=session.client.getHandler(SteamApps.class);
+        var tokens=await(apps.picsGetAccessTokens(WorkshopQuery.APP_ID,null));
+        long token=tokens.getAppTokens().getOrDefault(WorkshopQuery.APP_ID,0L);
+        var request=new in.dragonbra.javasteam.steam.handlers.steamapps.PICSRequest(WorkshopQuery.APP_ID,token);
+        var job=apps.picsGetProductInfo(java.util.List.of(request),java.util.List.of());
+        var results=job.toFuture().get(40,TimeUnit.SECONDS).getResults();
+        for(var callback:results){
+            var info=callback.getApps().get(WorkshopQuery.APP_ID);if(info==null)continue;
+            var gid=info.getKeyValues().get("depots").get(Integer.toString(ENGINE_DEPOT)).get("manifests").get("public").get("gid");
+            long id=gid.asLong(0);if(id==0)id=info.getKeyValues().get("depots").get(Integer.toString(ENGINE_DEPOT)).get("manifests").get("public").asLong(0);
+            if(id!=0)return id;
+        }
+        throw new IOException("Steam 没有返回 Wallpaper Engine 本体的内容清单。");
+    }
+
+    /** Manifest of the engine depot; Steam grants the key and manifest only to accounts that own Wallpaper Engine. */
+    public DepotManifest engineManifest(long manifestId,Progress progress) throws Exception {
+        this.progress=progress;return open(ENGINE_DEPOT,manifestId,"Wallpaper Engine 素材");
+    }
+
+    private DepotManifest open(int depotId,long manifestId,String label) throws Exception {
+        depot=depotId;
+        progress.update(0,0,"请求"+label+"下载权限…");
         var depotKey=await(session.client.getHandler(SteamApps.class)
             .getDepotDecryptionKey(depot,WorkshopQuery.APP_ID));
         if(depotKey.getResult()!=EResult.OK)
             throw new IOException("Steam 未授予下载权限："+depotKey.getResult()+"。请确认此账号拥有 Wallpaper Engine。");
         key=depotKey.getDepotKey();
-        progress.update(0,0,"请求作品清单授权…");
+        progress.update(0,0,"请求"+label+"清单授权…");
         var requestCode=await(directory.getManifestRequestCode(
             CContentServerDirectory_GetManifestRequestCode_Request.newBuilder()
-                .setAppId(WorkshopQuery.APP_ID).setDepotId(depot).setManifestId(item.getHcontentFile()).build()));
+                .setAppId(WorkshopQuery.APP_ID).setDepotId(depot).setManifestId(manifestId).build()));
         if(requestCode.getResult()!=EResult.OK || requestCode.getBody().getManifestRequestCode()==0)
             throw new IOException("Steam 没有授权此作品清单："+requestCode.getResult()+"。请检查购买资格和作品可见性。");
         progress.update(0,0,"获取 Steam 内容服务器…");
@@ -75,26 +104,26 @@ public final class WorkshopDownload {
         Exception last=null;List<String> failures=new ArrayList<>();int index=0;
         for(Server server:servers) {
             check();
-            progress.update(0,0,"下载作品清单（"+(++index)+"/"+servers.size()+"）…");
+            progress.update(0,0,"下载"+label+"清单（"+(++index)+"/"+servers.size()+"）…");
             try {
                 DepotManifest manifest;
-                try {manifest=cdn.manifest(depot,item.getHcontentFile(),
+                try {manifest=cdn.manifest(depot,manifestId,
                     requestCode.getBody().getManifestRequestCode(),server,key,auth.get(server.getHost()));}
                 catch(SteamCdn.HttpFailure e) {
                     if(!e.needsToken())throw e;
                     auth.remove(server.getHost());
                     String signed=token(server);if(signed==null||signed.isEmpty())throw e;
-                    manifest=cdn.manifest(depot,item.getHcontentFile(),
+                    manifest=cdn.manifest(depot,manifestId,
                         requestCode.getBody().getManifestRequestCode(),server,key,signed);
                 }
-                if(manifest.getDepotID()!=depot || manifest.getManifestGID()!=item.getHcontentFile())
+                if(manifest.getDepotID()!=depot || manifest.getManifestGID()!=manifestId)
                     throw new IOException("Steam 返回的清单与请求不一致。");
                 // Reuse a working endpoint first for the following resource chunks.
                 servers.remove(server);servers.add(0,server);return manifest;
             } catch(InterruptedException e){throw e;}
               catch(Exception e){ last=e;failures.add(server.getHost()+"："+SteamCdn.failure(e)); }
         }
-        throw new IOException("作品清单下载失败（已尝试 "+servers.size()+" 个节点）。\n"+String.join("\n",failures),last);
+        throw new IOException(label+"清单下载失败（已尝试 "+servers.size()+" 个节点）。\n"+String.join("\n",failures),last);
     }
 
     private String token(Server server) throws Exception {

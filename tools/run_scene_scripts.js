@@ -12,6 +12,7 @@ const steps = JSON.parse(fs.readFileSync(plan, 'utf8'));
 let previous = 0; const results = [];
 for (const step of steps) {
   const frame = { runtime: step.t, frametime: step.t - previous, cursor: step.cursor || null, down: !!step.down, events: step.events || [] };
+  if (step.user) frame.user = step.user;
   previous = step.t;
   results.push(JSON.parse(context.wmFrame(JSON.stringify(frame))));
 }

@@ -61,9 +61,9 @@ final class WallpaperRenderer {
     private void runScripts(WallpaperContent.Scene scene,dev.workshopvideo.core.CanvasCamera.Frame camera){
         if(scripts!=null&&scripts.scene!=scene){scripts.close();scripts=null;}
         if(scene==null||scene.scripts==null||camera==null)return;
-        if(scripts==null)scripts=new SceneScripts(context,scene);
+        if(scripts==null)scripts=new SceneScripts(context,scene,effects.options);
         for(float[] e:effects.drainPointer()){float[] p=dev.workshopvideo.core.SceneGeometry.sceneFromScreen(camera,scene.width,scene.height,e[1],e[2]);scripts.pointer(e[0]==0?"down":e[0]==2?"move":"up",p[0],p[1],e[3]>0);}
-        scripts.frame(canvasContent.sceneSeconds(),dev.workshopvideo.core.SceneGeometry.sceneFromScreen(camera,scene.width,scene.height,effects.pointerX(),effects.pointerY()),effects.pointerDown());
+        scripts.user(effects.options);scripts.frame(canvasContent.sceneSeconds(),dev.workshopvideo.core.SceneGeometry.sceneFromScreen(camera,scene.width,scene.height,effects.pointerX(),effects.pointerY()),effects.pointerDown());
     }
     WallpaperRenderer(android.content.Context context){this(context,null);}
     WallpaperRenderer(android.content.Context context,Events events){this.context=context;this.events=events;android.os.PowerManager power=context.getSystemService(android.os.PowerManager.class);powerSaving=power!=null&&power.isPowerSaveMode();staticInSaver=AppSettings.batteryStatic(context);quad.put(new float[]{-1,-1,0,0, 1,-1,1,0, -1,1,0,1, 1,1,1,1}).position(0);thread.start();handler=new Handler(thread.getLooper());handler.post(()->frameClock=new WallpaperFrameClock(()->effects.options.optInt("fps",120),this::needsFrames,()->draw(framePending)));}
@@ -154,8 +154,8 @@ final class WallpaperRenderer {
             if(canvasMode){
                 if(!frozen()&&announced&&!pageAnimation.moving()&&now>canvasDirtyUntil&&!canvasContent.animated()&&!effects.overlayAnimating())return;
                 if(!frozen()||!announced)usingSource=!layers&&canvasContent.gpuComposition();
-                if(layers){if(!frozen()||lastCanvasMotion==null)lastCanvasMotion=effects.frame(config.optBoolean("fit"));camera=dev.workshopvideo.core.CanvasCamera.frame(canvasContent.contentWidth(),canvasContent.contentHeight(),width,height,config.optBoolean("fit"),effects.options.optBoolean("pan"),offset,lastCanvasMotion);}
-                else if(usingSource){upload=canvasContent.sourceTexture(maxTextureSize);if(!frozen()||lastCanvasMotion==null)lastCanvasMotion=effects.frame(config.optBoolean("fit"));camera=dev.workshopvideo.core.CanvasCamera.frame(canvasContent.contentWidth(),canvasContent.contentHeight(),width,height,config.optBoolean("fit"),effects.options.optBoolean("pan"),offset,lastCanvasMotion);}
+                if(layers){if(!frozen()||lastCanvasMotion==null)lastCanvasMotion=effects.frame(config.optBoolean("fit"));camera=viewCamera(width,height);}
+                else if(usingSource){upload=canvasContent.sourceTexture(maxTextureSize);if(!frozen()||lastCanvasMotion==null)lastCanvasMotion=effects.frame(config.optBoolean("fit"));camera=viewCamera(width,height);}
                 else if(!frozen()||!announced){if(!pageAnimation.moving()&&announced&&now>canvasDirtyUntil&&!canvasContent.animated()&&!effects.overlayAnimating())return;canvasContent.paint(new Canvas(canvasBitmap),canvasBitmap.getWidth(),canvasBitmap.getHeight());}
             }
             dev.workshopvideo.core.EffectMotion.Frame motion=canvasMode?new dev.workshopvideo.core.EffectMotion.Frame(0,0,1,0):effects.frame(false);
@@ -184,6 +184,11 @@ final class WallpaperRenderer {
             displayed=true;if(frozen()){handler.removeCallbacks(watchdog);stopFrames();if(player!=null&&ready)player.pause();}
             if((update||canvasMode)&&++frames>=(offscreen?3:1)&&!announced){announced=true;if(events!=null)events.rendered();}
         }catch(Exception e){error(e);}
+    }
+    /** The view of a canvas scene: phone motion and paging, then the scene camera (scripts, shake). */
+    private dev.workshopvideo.core.CanvasCamera.Frame viewCamera(int width,int height){
+        WallpaperContent.Scene viewed=canvasContent.gpuScene();float[] view=viewed==null?new float[]{0,0,1}:viewed.cameraAt(canvasContent.sceneSeconds());
+        return dev.workshopvideo.core.CanvasCamera.frame(canvasContent.contentWidth(),canvasContent.contentHeight(),width,height,config.optBoolean("fit"),effects.options.optBoolean("pan"),offset,lastCanvasMotion,view[0],view[1],view[2]);
     }
     private void drawOverlay(){
         if(!effects.options.optBoolean("particles")&&!effects.options.optBoolean("ripple"))return;

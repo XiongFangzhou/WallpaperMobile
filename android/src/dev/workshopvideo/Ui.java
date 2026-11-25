@@ -142,6 +142,10 @@ public final class Ui {
     public static String date(int seconds){return new java.text.SimpleDateFormat("yyyy-MM-dd",Locale.CHINA).format(new Date(Integer.toUnsignedLong(seconds)*1000));}
 
     /** Five stars filled to {@code value} out of 5, so 4.6 shows the last star 60% full. */
+    /** Installed version name, read from the package so it always matches the build. */
+    public static String version(Context context){
+        try{return context.getPackageManager().getPackageInfo(context.getPackageName(),0).versionName;}catch(Exception unknown){return "";}
+    }
     public static final class Stars extends Drawable {
         private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);private final float value;private final int size;
         public Stars(float value,int size){this.value=Math.max(0,Math.min(5,value));this.size=size;setBounds(0,0,getIntrinsicWidth(),size);}

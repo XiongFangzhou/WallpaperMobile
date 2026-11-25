@@ -94,6 +94,8 @@ public final class VideoApp extends Application {
     }
 
     @Override public void onCreate() {
+        try{android.app.ActivityManager am=getSystemService(android.app.ActivityManager.class);android.app.ActivityManager.MemoryInfo info=new android.app.ActivityManager.MemoryInfo();am.getMemoryInfo(info);dev.workshopvideo.core.SceneBudget.use(dev.workshopvideo.core.SceneBudget.forMemory(info.totalMem,am.isLowRamDevice()));}catch(RuntimeException unknown){dev.workshopvideo.core.SceneBudget.use(null);}
+        if(EngineAssets.installed(this)!=0)SceneAdapter.engineRoot=EngineAssets.root(this);
         super.onCreate();prefs=getSharedPreferences("video",MODE_PRIVATE);previews=new PreviewImages(getCacheDir());results=new DiscoverResults(getCacheDir());eligibility=new WallpaperEligibility(this);
         registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks(){
             public void onActivityStarted(Activity activity){visibleActivities++;if(visibleActivities==1){retryCount=0;scheduleRecovery(0);}}
@@ -121,7 +123,7 @@ public final class VideoApp extends Application {
             try {getContentResolver().delete(Uri.parse(job.getString("pendingUri")),null,null);}catch(Exception ignored){}
             job.remove("pendingUri");save(job);
         }
-        work.submit(()->{try{migrateVideos();}finally{filesReady.complete(null);for(JSONObject job:jobs())if(!job.optString("state").equals("saved")&&job.optBoolean("discardRequested"))try{discard(job.optString("id"));}catch(Exception failure){put(job,"state","error");put(job,"error","取消后的资源清理失败："+error(failure));save(job);}changed();}});
+        work.submit(()->{try{migrateVideos();}finally{filesReady.complete(null);SceneReconversion.schedule(this);for(JSONObject job:jobs())if(!job.optString("state").equals("saved")&&job.optBoolean("discardRequested"))try{discard(job.optString("id"));}catch(Exception failure){put(job,"state","error");put(job,"error","取消后的资源清理失败："+error(failure));save(job);}changed();}});
     }
 
     public static void put(JSONObject object,String key,Object value) {
@@ -199,6 +201,7 @@ public final class VideoApp extends Application {
         try{WorkshopAssets.clear(transfer(id));}catch(IOException e){throw new IllegalStateException(error(e),e);}
         File partial=partial(id);if(partial.exists()&&!partial.delete())throw new IllegalStateException("未能清理临时文件。");
         File privateFile=video(id);if(privateFile.exists()&&!privateFile.delete())throw new IllegalStateException("未能清理视频文件。");
+        File original=original(id);if(original.exists()&&!original.delete())throw new IllegalStateException("未能清理原始资源包。");
         JSONArray values=new JSONArray();
         for(JSONObject j:jobs())if(!j.optString("id").equals(id))values.put(j);
         if(!prefs.edit().putString("jobs",values.toString()).commit())throw new IllegalStateException("清理记录失败。");
@@ -210,6 +213,12 @@ public final class VideoApp extends Application {
         File directory=new File(getFilesDir(),"transfers");directory.mkdirs();return new File(directory,id+".partial");
     }
     public File video(String id){return VideoFiles.path(new File(getFilesDir(),"videos"),id);}
+    /** Copies the downloaded package next to the saved scene, replacing any older copy only once complete. */
+    public void keepOriginal(String id,File raw)throws IOException{File kept=new File(original(id).getPath()+".tmp");java.nio.file.Files.copy(raw.toPath(),kept.toPath(),java.nio.file.StandardCopyOption.REPLACE_EXISTING);java.nio.file.Files.move(kept.toPath(),original(id).toPath(),java.nio.file.StandardCopyOption.REPLACE_EXISTING);}
+    /** Records which converter and engine assets produced a scene, for later background reconversion. */
+    public void stampConversion(JSONObject record){SceneReconversion.stamp(record,EngineAssets.installed(this));}
+    /** The original workshop package of a converted scene, kept so newer converters can redo it without downloading. */
+    public File original(String id){if(!id.matches("[0-9a-f]{32}"))throw new IllegalArgumentException("任务 ID 无效。");File directory=new File(getFilesDir(),"originals");directory.mkdirs();return new File(directory,id+".pkg");}
     public File preview(String id){if(!id.matches("[0-9a-f]{32}"))throw new IllegalArgumentException("视频 ID 无效。");File directory=new File(getCacheDir(),"previews");directory.mkdirs();return new File(directory,id+".jpg");}
     public Uri videoUri(String id){video(id);return Uri.parse("content://"+getPackageName()+".videos/videos/"+id);}
     public static String mime(String name) {

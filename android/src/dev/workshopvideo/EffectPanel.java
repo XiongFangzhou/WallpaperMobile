@@ -9,8 +9,8 @@ final class EffectPanel extends LinearLayout {
  private void control(View view,LayoutParams p){if(card!=null)card.addView(view,p);else addView(view,p);}
  private void control(View view){control(view,new LayoutParams(-1,-2));}
  private void heading(String title){card=new LinearLayout(activity);card.setOrientation(VERTICAL);card.setPadding(dp(16),dp(6),dp(16),dp(14));card.setBackground(Ui.card(activity));LayoutParams p=new LayoutParams(-1,-2);p.topMargin=dp(12);addView(card,p);TextView name=label(title,15,Ui.TEXT);name.setTypeface(null,android.graphics.Typeface.BOLD);card.addView(name);}
- private void changed(){changed.accept(kind.equals("video")?EffectOptions.video(value):EffectOptions.normalize(value));}
- private void toggle(String key,String title,boolean enabled){Switch s=new Switch(activity);s.setText(title);s.setTextSize(13);s.setTextColor(Ui.TEXT);s.setMinHeight(dp(46));s.setPadding(0,dp(6),0,dp(6));s.setChecked(enabled&&value.optBoolean(key,key.equals("xray")));s.setEnabled(enabled);s.setAlpha(enabled?1:.45f);s.setThumbTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked},new int[]{}},new int[]{Ui.ACCENT,0xff81909f}));s.setTrackTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked},new int[]{}},new int[]{0xff355c51,0xff303d4b}));s.setOnCheckedChangeListener((b,on)->{VideoApp.put(value,key,on);if(!kind.equals("video")&&java.util.List.of("gyro","touch","ripple","particles","pan","xray").contains(key))build();changed();});control(s);}
+ private void changed(){applyAuthorTargets();changed.accept(kind.equals("video")?EffectOptions.video(value):EffectOptions.normalize(value));}
+ private void toggle(String key,String title,boolean enabled){Switch s=new Switch(activity);s.setText(title);s.setTextSize(13);s.setTextColor(Ui.TEXT);s.setMinHeight(dp(46));s.setPadding(0,dp(6),0,dp(6));s.setChecked(enabled&&value.optBoolean(key,key.equals("xray")));s.setEnabled(enabled);s.setAlpha(enabled?1:.45f);s.setThumbTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked},new int[]{}},new int[]{Ui.ACCENT,0xff81909f}));s.setTrackTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked},new int[]{}},new int[]{0xff355c51,0xff303d4b}));s.setOnCheckedChangeListener((b,on)->{VideoApp.put(value,key,on);if(!kind.equals("video")&&(java.util.List.of("gyro","touch","ripple","particles","pan","xray").contains(key)||key.startsWith("user.")))build();changed();});control(s);}
  private void slider(String key,String title,float min,float max,String suffix){
   float initial=(float)value.optDouble(key,key.equals("xraySize")?.3:min);LinearLayout header=new LinearLayout(activity);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(0,dp(8),0,0);TextView name=label(title,13,Ui.TEXT);name.setPadding(0,0,0,0);header.addView(name,new LayoutParams(0,-2,1));TextView number=label(number(key,initial)+suffix,12,Ui.ACCENT);number.setPadding(dp(8),dp(2),dp(8),dp(2));number.setBackground(AppSheet.background(Ui.ACCENT_SOFT,dp(8)));header.addView(number);control(header);
   SeekBar bar=new SeekBar(activity);bar.setMax(key.equals("fallbackPages")?11:key.equals("fps")?105:1000);bar.setProgress(Math.round((initial-min)/(max-min)*bar.getMax()));bar.setProgressTintList(ColorStateList.valueOf(Ui.ACCENT));bar.setProgressBackgroundTintList(ColorStateList.valueOf(Ui.LINE));bar.setThumbTintList(ColorStateList.valueOf(Ui.ACCENT));bar.setContentDescription(title);bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onStartTrackingTouch(SeekBar s){}public void onStopTrackingTouch(SeekBar s){}public void onProgressChanged(SeekBar s,int p,boolean user){if(!user)return;float next=min+(max-min)*p/s.getMax();if(key.equals("fallbackPages")||key.equals("fps"))next=Math.round(next);VideoApp.put(value,key,next);number.setText(number(key,next)+suffix);changed();}});bar.setPadding(dp(4),0,dp(4),0);control(bar,new LayoutParams(-1,dp(36)));
@@ -19,19 +19,66 @@ final class EffectPanel extends LinearLayout {
  private String format(float f){return String.format(Locale.CHINA,"%.2f",f);}
  /** Author switches of a converted scene (bool and combo properties that show or hide layers). */
  private org.json.JSONObject sceneProperties=new org.json.JSONObject();
- void sceneProperties(org.json.JSONObject properties){sceneProperties=properties==null?new org.json.JSONObject():properties;build();}
- private void propertyControls(){
-  if(sceneProperties.length()==0)return;heading("作品设置");
-  java.util.List<String> names=new java.util.ArrayList<>();for(java.util.Iterator<String> k=sceneProperties.keys();k.hasNext();)names.add(k.next());
-  names.sort(java.util.Comparator.comparingInt(n->sceneProperties.optJSONObject(n).optInt("order",0)));
-  for(String name:names){
-   org.json.JSONObject p=sceneProperties.optJSONObject(name);String key="user."+name,label=p.optString("label",name);
-   if(p.optString("type").equals("bool")){if(!value.has(key))VideoApp.put(value,key,p.optBoolean("value",String.valueOf(p.opt("value")).equals("true")));toggle(key,label,true);}
-   else{org.json.JSONArray options=p.optJSONArray("options");if(options==null||options.length()<2||options.length()>6)continue;String[] keys=new String[options.length()],labels=new String[options.length()];
-    for(int i=0;i<keys.length;i++){keys[i]=options.optJSONArray(i).optString(1);labels[i]=options.optJSONArray(i).optString(0);}
-    if(!value.has(key))VideoApp.put(value,key,String.valueOf(p.opt("value")));choice(key,label,keys,labels);}
+ void sceneProperties(org.json.JSONObject properties){sceneProperties=properties==null?new org.json.JSONObject():properties;authorSnapshot.clear();for(java.util.Iterator<String> k=sceneProperties.keys();k.hasNext();){String n=k.next();authorSnapshot.put(n,String.valueOf(value.opt("user."+n)));}build();}
+ /** Last applied value of each author setting, so only the one just changed rewrites the phone options it drives. */
+ private final java.util.Map<String,String> authorSnapshot=new java.util.HashMap<>();
+ /** Author settings that drive phone options: mouse parallax → tilt parallax, its influence → tilt strength, camera zoom and centre → zoom and position. */
+ private void applyAuthorTargets(){
+  for(java.util.Iterator<String> k=sceneProperties.keys();k.hasNext();){
+   String name=k.next();org.json.JSONObject p=sceneProperties.optJSONObject(name);Object v=value.opt("user."+name);if(p==null||v==null)continue;
+   String now=String.valueOf(v);if(now.equals(authorSnapshot.get(name)))continue;authorSnapshot.put(name,now);
+   org.json.JSONArray targets=p.optJSONArray("targets");if(targets==null)continue;double number=value.optDouble("user."+name,0);
+   for(int i=0;i<targets.length();i++){
+    org.json.JSONObject t=targets.optJSONObject(i);if(t==null||!t.optString("kind").equals("option"))continue;
+    switch(t.optString("key")){
+     case "gyro"->VideoApp.put(value,"gyro",t.has("condition")?now.equals(t.optString("condition")):!now.equals("false")&&!now.equals("0"));
+     case "strength"->VideoApp.put(value,"strength",Math.max(0,Math.min(1,number*2)));
+     case "zoom"->VideoApp.put(value,"zoom",Math.max(1,Math.min(2.5,number)));
+     case "x"->VideoApp.put(value,"x",Math.max(-.5,Math.min(.5,.5-number)));
+     case "y"->VideoApp.put(value,"y",Math.max(-.5,Math.min(.5,number-.5)));
+     default->{}
+    }
+   }
   }
  }
+ /**
+  * The work's own settings, generated from its declarations the way Wallpaper Engine lists them: author groups become
+  * sections, display conditions hide what does not apply, and settings that have no effect on the phone are named once.
+  */
+ /** Shown above the settings when the saved scene came from an older converter that could not keep them. */
+ private String sceneNotice;
+ void sceneNotice(String notice){sceneNotice=notice;build();}
+ private void propertyControls(){
+  if(sceneNotice!=null){heading("作品设置");TextView note=label(sceneNotice,13,Ui.MUTED);note.setLineSpacing(dp(3),1);control(note);if(sceneProperties.length()==0)return;}
+  applyAuthorTargets();if(sceneNotice==null)heading("作品设置");
+  java.util.List<String> names=new java.util.ArrayList<>();for(java.util.Iterator<String> k=sceneProperties.keys();k.hasNext();)names.add(k.next());
+  names.sort(java.util.Comparator.comparingInt(n->sceneProperties.optJSONObject(n).optInt("order",0)));
+  java.util.function.Function<String,Object> current=n->{org.json.JSONObject p=sceneProperties.optJSONObject(n);return value.has("user."+n)?value.opt("user."+n):p==null?null:p.opt("value");};
+  String group=null;
+  for(String name:names){
+   org.json.JSONObject p=sceneProperties.optJSONObject(name);String type=p.optString("type"),key="user."+name,label=p.optString("label",name);
+   if(!dev.workshopvideo.core.PropertyCondition.test(p.optString("condition"),current))continue;
+   // Groups fold like the desktop panel's sections; everything after a group belongs to it until the next one.
+   if(type.equals("group")){group=name;boolean open=expanded.contains(name);TextView row=label((open?"▾  ":"▸  ")+label,14,Ui.TEXT);row.setTypeface(null,android.graphics.Typeface.BOLD);row.setMinHeight(dp(44));row.setGravity(Gravity.CENTER_VERTICAL);row.setOnClickListener(v->{if(!expanded.remove(name))expanded.add(name);build();});control(row);continue;}
+   if(group!=null&&!expanded.contains(group))continue;
+   if(type.equals("divider")){View line=new View(activity);line.setBackgroundColor(Ui.LINE);LayoutParams lp=new LayoutParams(-1,dp(1));lp.topMargin=dp(8);lp.bottomMargin=dp(8);control(line,lp);continue;}
+   if(type.equals("text")){TextView note=label(label,12,Ui.MUTED);note.setLineSpacing(dp(3),1);control(note);continue;}
+   boolean works=p.optBoolean("effective",true)&&java.util.List.of("bool","combo","slider","color","textinput").contains(type);String title=works?label:label+"（手机上暂不生效）";
+   switch(type){
+    case "slider"->{if(!value.has(key))VideoApp.put(value,key,p.optDouble("value",p.optDouble("min",0)));slider(key,title,(float)p.optDouble("min",0),(float)p.optDouble("max",1),"");}
+    case "bool"->{if(!value.has(key))VideoApp.put(value,key,dev.workshopvideo.core.PropertyCondition.truthy(p.opt("value")));toggle(key,title,true);}
+    case "color"->{if(!value.has(key))VideoApp.put(value,key,dev.workshopvideo.core.UserValues.hex(p.opt("value")));colorControl(key,title,dev.workshopvideo.core.UserValues.hex(p.opt("value")));}
+    case "combo"->{org.json.JSONArray options=p.optJSONArray("options");if(options==null||options.length()<1)break;
+     String[] keys=new String[Math.min(8,options.length())],labels=new String[keys.length];
+     for(int i=0;i<keys.length;i++){keys[i]=options.optJSONArray(i).optString(1);labels[i]=options.optJSONArray(i).optString(0);}
+     if(!value.has(key))VideoApp.put(value,key,String.valueOf(p.opt("value")));choice(key,title,keys,labels);}
+    case "textinput"->{if(!value.has(key))VideoApp.put(value,key,p.optString("value",""));textControl(key,title);}
+    default->{String shown=String.valueOf(p.opt("value"));TextView item=label(label+(shown.isEmpty()||shown.equals("null")?"":"："+shown)+"（手机上暂不生效）",13,Ui.MUTED);control(item);}
+   }
+  }
+ }
+ /** Author groups the user opened in this session. */
+ private final java.util.Set<String> expanded=new java.util.HashSet<>();
  void sceneLayers(float[] depths,String[] names,boolean xray){layerDepths=depths;layerNames=names;this.xray=xray;layerCount=Math.min(32,depths.length);build();}
  private void layerControls(){
   if(xray){heading("触摸透视");toggle("xray","按住并拖动查看另一层图片",true);if(value.optBoolean("xray",true))slider("xraySize","揭示范围",.01f,1,"");}
@@ -46,6 +93,18 @@ final class EffectPanel extends LinearLayout {
   // Options speak for themselves; no descriptive line under each choice.
  }
  private void backgroundColor(){colorControl("backgroundColor","背景颜色","#000000");}
+ /** Free text from the author's settings (a textinput property), applied as it is typed. */
+ private void textControl(String key,String title){
+  TextView heading=label(title,13,Ui.TEXT);heading.setPadding(0,dp(10),0,dp(6));control(heading);
+  android.widget.EditText field=new android.widget.EditText(activity);field.setText(value.optString(key,""));field.setTextSize(14);field.setTextColor(Ui.TEXT);field.setHintTextColor(Ui.MUTED);field.setTag("text-"+key);
+  field.setPadding(dp(12),dp(10),dp(12),dp(10));field.setBackground(AppSheet.background(Ui.RAISED,dp(14)));field.setMaxLines(4);
+  field.addTextChangedListener(new android.text.TextWatcher(){
+   @Override public void beforeTextChanged(CharSequence s,int a,int b,int c){}
+   @Override public void onTextChanged(CharSequence s,int a,int b,int c){}
+   @Override public void afterTextChanged(android.text.Editable s){VideoApp.put(value,key,s.toString());changed();}
+  });
+  control(field);
+ }
  private void colorControl(String key,String title,String defaultColor){
   LinearLayout row=new LinearLayout(activity);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(10),dp(10),dp(12),dp(10));row.setBackground(Ui.pressable(AppSheet.background(Ui.RAISED,dp(14)),0x22a9efd5,dp(14)));row.setTag(key.equals("backgroundColor")?"background-color":"effect-color");View chip=new View(activity);row.addView(chip,new LayoutParams(dp(42),dp(42)));LinearLayout words=new LinearLayout(activity);words.setOrientation(VERTICAL);words.setPadding(dp(12),0,0,0);TextView heading=label(title,13,Ui.TEXT);heading.setPadding(0,0,0,dp(4));words.addView(heading);TextView colorName=label("",11,Ui.MUTED);colorName.setPadding(0,0,0,0);words.addView(colorName);row.addView(words,new LayoutParams(0,-2,1));TextView arrow=label("›",24,Ui.MUTED);arrow.setPadding(dp(8),0,0,0);row.addView(arrow);
   Runnable update=()->{int selected=Color.parseColor(value.optString(key,defaultColor));android.graphics.drawable.GradientDrawable bg=AppSheet.background(selected,dp(12));bg.setStroke(dp(1),0xff4a596b);chip.setBackground(bg);colorName.setText(WallpaperColorPicker.name(selected));};update.run();

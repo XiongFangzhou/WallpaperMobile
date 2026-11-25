@@ -278,7 +278,7 @@ public final class MainActivity extends Activity {
             finally{app.connecting=false;app.changed();runOnUiThread(()->{refreshStatus();renderResults();});}});
     }
     private void aboutDialog(){
-        AppSheet sheet=new AppSheet(this,"WallpaperMobile","版本 0.5.12",null);
+        AppSheet sheet=new AppSheet(this,"WallpaperMobile","版本 "+Ui.version(this),null);
         TextView info=text("在手机上搜索、收藏和下载 Steam 创意工坊的壁纸，不需要电脑。\n\n· 下载的内容只保存在本应用内，不会出现在系统相册。\n· 在「已保存」中单击播放或预览；长按可设为壁纸、收藏或删除。\n· 卸载应用或清除应用数据会删除已下载的内容。\n\n开源组件及许可见安装包内 assets/THIRD_PARTY_NOTICES.txt。",13,MUTED);info.setLineSpacing(dp(5),1);sheet.field(info);
         sheet.footerButton("知道了",true,()->sheet.dialog.dismiss());sheet.show();
     }
@@ -490,8 +490,8 @@ public final class MainActivity extends Activity {
         Runnable updateFavorite=()->{boolean selected=app.isFavorite(itemId);favorite.setImageDrawable(new Ui.Icon(selected?"heartFilled":"heart",selected?ACCENT:TEXT,dp(20)));favorite.setContentDescription(selected?"取消收藏":"收藏");};
         favorite.setOnClickListener(v->{try{app.toggleFavorite(item);if(adapter!=null)adapter.notifyDataSetChanged();}catch(Exception e){toast(VideoApp.error(e));}updateFavorite.run();});updateFavorite.run();
         if(video&&supported)sheet.footerButton("在线播放",false,()->{if(!app.canRecover()||app.guest){toast("在线播放需要登录拥有 Wallpaper Engine 的 Steam 账号。");loginDialog();return;}sheet.dialog.dismiss();startActivity(new Intent(this,VideoPlayerActivity.class).putExtra("workshopId",itemId).putExtra("title",item.optString("title")));});
-        JSONObject existing=existingJob(itemId);boolean saved=existing!=null&&existing.optString("state").equals("saved");
-        String primary=!supported?"暂不支持":saved?"打开":existing!=null?"查看下载":video?"下载":"下载并转换";
+        JSONObject existing=existingJob(itemId);boolean converting=existing!=null&&existing.optString("state").equals("saved")&&existing.optBoolean("converting"),saved=existing!=null&&existing.optString("state").equals("saved")&&!converting;
+        String primary=!supported?"暂不支持":converting?"正在转换":saved?"打开":existing!=null?"查看下载":video?"下载":"下载并转换";
         Button download=sheet.footerButton(primary,true,()->{
             sheet.dialog.dismiss();
             if(saved){openVideo(existing);return;}

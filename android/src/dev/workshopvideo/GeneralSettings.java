@@ -12,6 +12,7 @@ final class GeneralSettings {
         sheet.field(option(activity,"省电时保持静态画面","省电模式下暂停动画和体感",AppSettings.batteryStatic(activity),value->AppSettings.batteryStatic(activity,value)));
         sheet.field(option(activity,"桌面滑动兼容","桌面不报告翻页位置时，按滑动推算",AppSettings.gesturePaging(activity),value->AppSettings.gesturePaging(activity,value)));
         sheet.action("settings","精确桌面同步",LauncherSync.status(AppSettings.launcherSync(activity)),false,()->launcherSync(activity));
+        sheet.action("download","Wallpaper Engine 素材",EngineAssets.status(activity),false,()->{sheet.dialog.dismiss();EngineAssets.open(activity);});
         sheet.footerButton("完成",true,()->sheet.dialog.dismiss());sheet.show();
     }
     private static void launcherSync(Activity activity){

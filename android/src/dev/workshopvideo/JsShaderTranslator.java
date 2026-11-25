@@ -24,7 +24,7 @@ final class JsShaderTranslator implements SceneEffects.Translator, AutoCloseable
         if(!JavaScriptSandbox.isSupported())throw new IOException("系统 WebView 版本过旧，不支持特效转换");
         sandbox=JavaScriptSandbox.createConnectedInstanceAsync(context).get(20,TimeUnit.SECONDS);
         isolate=sandbox.createIsolate();
-        String script;try(InputStream input=context.getAssets().open(BUNDLE)){script=new String(input.readAllBytes(),StandardCharsets.UTF_8);}
+        String script;try(InputStream input=context.getAssets().open(BUNDLE)){script=new String(dev.workshopvideo.core.VideoFiles.readAll(input),StandardCharsets.UTF_8);}
         isolate.evaluateJavaScriptAsync(script).get(30,TimeUnit.SECONDS);
         return isolate;
     }

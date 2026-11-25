@@ -8,6 +8,12 @@ public class SceneCompositionChecks {
   File file=new File(System.getProperty("graphics.work"),"cache-gradient-scene.zip");Bitmap gradient=Bitmap.createBitmap(192,96,Bitmap.Config.ARGB_8888);for(int y=0;y<96;y++)for(int x=0;x<192;x++)gradient.setPixel(x,y,Color.rgb(x,255-x,y*2));ByteArrayOutputStream image=new ByteArrayOutputStream();gradient.compress(Bitmap.CompressFormat.PNG,100,image);gradient.recycle();JSONObject root=new JSONObject().put("format","WallpaperMobileScene/1").put("width",192).put("height",96).put("layers",new JSONArray().put(new JSONObject().put("file","gradient.png")));
   try(ZipOutputStream z=new ZipOutputStream(new FileOutputStream(file))){z.putNextEntry(new ZipEntry("wallpaper-mobile.json"));z.write(root.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));z.closeEntry();z.putNextEntry(new ZipEntry("gradient.png"));z.write(image.toByteArray());z.closeEntry();}return file;
  }
+ /** The scene camera moves the view without the motion clamp: 100 scene units right shifts the picture left by 100 units of screen scale; zoom multiplies. */
+ @Test public void sceneCameraOffsetsAndZoomsTheView(){
+  dev.workshopvideo.core.EffectMotion.Frame still=new dev.workshopvideo.core.EffectMotion.Frame(0,0,1,0);
+  dev.workshopvideo.core.CanvasCamera.Frame base=dev.workshopvideo.core.CanvasCamera.frame(1920,1080,1080,2400,false,false,.5f,still),moved=dev.workshopvideo.core.CanvasCamera.frame(1920,1080,1080,2400,false,false,.5f,still,100,50,1),zoomed=dev.workshopvideo.core.CanvasCamera.frame(1920,1080,1080,2400,false,false,.5f,still,0,0,2);
+  float scale=2400/1080f;Assert.assertEquals(-100*scale*2/1080,moved.x()-base.x(),1e-4);Assert.assertEquals(-50*scale*2/2400,moved.y()-base.y(),1e-4);Assert.assertEquals(base.scaleX()*2,zoomed.scaleX(),1e-4);
+ }
  @Test public void cachedCameraMatchesExistingCanvasAtEveryPageAndRotation()throws Exception{
   File file=fixture();WallpaperEffects effects=new WallpaperEffects();JSONObject o=new JSONObject().put("zoom",1).put("pan",true);effects.options(o);JSONObject config=new JSONObject().put("effects",effects.options).put("pan",true);try(var unused=new AutoCloseable(){public void close(){}}){
   CanvasWallpaper content=new CanvasWallpaper(null,64,128,file,config,new android.os.Handler(android.os.Looper.getMainLooper()),effects,null);

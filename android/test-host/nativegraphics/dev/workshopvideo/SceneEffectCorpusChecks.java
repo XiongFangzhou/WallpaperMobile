@@ -31,6 +31,8 @@ public class SceneEffectCorpusChecks {
             }finally{try(var files=Files.walk(work)){files.sorted(Comparator.reverseOrder()).forEach(p->p.toFile().delete());}}
         }
     }
+    /** WVB_ENGINE_ASSETS: the desktop Wallpaper Engine assets folder, standing in for the copy the phone downloads. */
+    @BeforeClass public static void engineAssets(){String engine=System.getenv("WVB_ENGINE_ASSETS");SceneAdapter.engineRoot=engine==null||engine.isBlank()?null:new File(engine);String gb=System.getenv("WVB_PHONE_MEMORY_GB");dev.workshopvideo.core.SceneBudget.use(gb==null?null:dev.workshopvideo.core.SceneBudget.forMemory(Long.parseLong(gb)*1024L*1024*1024,false));}
     private static File root(){File dir=new File(System.getProperty("graphics.work")).getAbsoluteFile();while(dir!=null&&!new File(dir,"tools/run_shader_translator.js").isFile())dir=dir.getParentFile();return dir;}
     private static boolean nodeAvailable(){try{return new ProcessBuilder("node","--version").start().waitFor()==0;}catch(Exception e){return false;}}
 
@@ -78,7 +80,7 @@ public class SceneEffectCorpusChecks {
         File workspace=new File(System.getProperty("graphics.work"),"effect-corpus");workspace.mkdirs();
         SceneAdapter.Report report=SceneAdapter.inspect(asDownloaded(new File(workshop,"3462491575"),workspace),workspace);
         assertFalse("no layer is dropped for the budget: "+report.skipped,report.skipped.keySet().stream().anyMatch(k->k.contains("预算")));
-        assertTrue(report.properties.has("brcameraforeground"));
+        assertTrue(report.properties.has("brcameraforeground"));assertTrue("camera zoom and mouse-parallax influence are offered as sliders",report.properties.has("newproperty30")&&report.properties.has("brmouseparallaximpactvalue"));
         File adapted=new File(workspace,"3462491575-switches.zip");SceneAdapter.write(report,adapted,new NodeTranslator(root));report.scene.close();
         try(WallpaperContent.Scene scene=WallpaperContent.scene(adapted)){
             WallpaperContent.Layer front=null;for(WallpaperContent.Layer l:scene.layers)if(l.name.equals("m3 前")&&l.when!=null&&l.when.toString().contains("\"0\""))front=l;
@@ -86,6 +88,63 @@ public class SceneEffectCorpusChecks {
             assertFalse("foreground is hidden by default, as on the PC",front.shown(options,scene.properties));
             options.put("user.brcameraforeground",true);assertTrue("turning the switch on shows it",front.shown(options,scene.properties));
             options.put("user.hrbbrmouseparallax","1");assertFalse("combo conditions are respected",front.shown(options,scene.properties));
+        }
+    }
+    @Test public void textLayersFollowSettingsAndScripts()throws Exception{
+        String workshop=System.getenv("WVB_WORKSHOP_DIR");File root=root();
+        Assume.assumeTrue(workshop!=null&&!workshop.isBlank()&&root!=null&&nodeAvailable()&&new File(workshop,"3462491575/project.json").isFile());
+        File workspace=new File(System.getProperty("graphics.work"),"effect-corpus");workspace.mkdirs();
+        SceneAdapter.Report report=SceneAdapter.inspect(asDownloaded(new File(workshop,"3462491575"),workspace),workspace);
+        assertTrue("text objects become text layers",report.textLayers>=10);assertTrue("fonts in the package load, large CJK ones too: "+report.missingFonts,report.missingFonts.isEmpty());
+        File adapted=new File(workspace,"3462491575-text.zip");SceneAdapter.write(report,adapted,new NodeTranslator(root));report.scene.close();
+        try(WallpaperContent.Scene scene=WallpaperContent.scene(adapted)){
+            WallpaperContent.Layer clock=null;for(WallpaperContent.Layer l:scene.layers)if(l.text!=null&&"newproperty32".equals(l.text.sizeProperty))clock=l;
+            assertNotNull("the clock's point size follows its author slider",clock);assertFalse("the saved text is already drawn",clock.text.stale());
+            float height=clock.h,centre=clock.y+clock.h/2;java.util.ArrayList<android.graphics.Bitmap> retired=new java.util.ArrayList<>();
+            JSONObject options=new JSONObject().put("user.newproperty32",clock.text.pointsize*2);scene.applyUser(options);scene.refreshTexts(retired);
+            assertEquals("doubling the point size doubles the box",height*2,clock.h,height*.05f);assertEquals("a centred box stays centred",centre,clock.y+clock.h/2,1f);
+            long bound=scene.layers.stream().filter(l->l.text!=null&&"newproperty32".equals(l.text.sizeProperty)).count();assertEquals("every text layer on that slider is redrawn once",bound,retired.size());retired.clear();
+            scene.applyText(clock.objectId,"23:59",Float.NaN,null);assertTrue(clock.text.stale());scene.refreshTexts(retired);assertEquals("23:59",clock.text.value);assertFalse(clock.text.stale());
+        }
+    }
+    /** 3601075812 binds general.bloom to the author switch "bloom"; 3213046325 has a coloured bloom always on. */
+    @Test public void bloomFollowsSceneAndAuthorSwitch()throws Exception{
+        String workshop=System.getenv("WVB_WORKSHOP_DIR");File root=root();
+        Assume.assumeTrue(workshop!=null&&!workshop.isBlank()&&root!=null&&nodeAvailable()&&new File(workshop,"3601075812/project.json").isFile());
+        File workspace=new File(System.getProperty("graphics.work"),"effect-corpus");workspace.mkdirs();
+        SceneAdapter.Report report=SceneAdapter.inspect(asDownloaded(new File(workshop,"3601075812"),workspace),workspace);
+        File adapted=new File(workspace,"3601075812-bloom.zip");SceneAdapter.write(report,adapted,new NodeTranslator(root));report.scene.close();
+        try(WallpaperContent.Scene scene=WallpaperContent.scene(adapted)){
+            assertEquals("bloom",scene.bloomOnProperty);assertEquals(.22f,scene.bloomThreshold,1e-4);assertEquals(.5f,scene.bloomStrength,1e-4);
+            scene.applyUser(new JSONObject().put("user.bloom",false));assertFalse("the author switch turns bloom off",scene.bloom);
+            scene.applyUser(new JSONObject().put("user.bloom",true));assertTrue(scene.bloom);
+        }
+        Assume.assumeTrue(new File(workshop,"3213046325/project.json").isFile());
+        report=SceneAdapter.inspect(asDownloaded(new File(workshop,"3213046325"),workspace),workspace);
+        adapted=new File(workspace,"3213046325-bloom.zip");SceneAdapter.write(report,adapted,new NodeTranslator(root));report.scene.close();
+        try(WallpaperContent.Scene scene=WallpaperContent.scene(adapted)){
+            assertTrue(scene.bloom);assertNull(scene.bloomOnProperty);assertEquals(.31373f,scene.bloomTint[1],1e-4);assertEquals(1f,scene.bloomTint[2],1e-4);
+        }
+    }
+    /** Diagnostic only: WVB_STILL_PROBE=id[,id] renders one frame of each converted scene (default settings) for comparison with its preview. */
+    @Test public void stillProbe()throws Exception{
+        String workshop=System.getenv("WVB_WORKSHOP_DIR"),ids=System.getenv("WVB_STILL_PROBE");File root=root();
+        Assume.assumeTrue(workshop!=null&&ids!=null&&!ids.isBlank()&&root!=null&&nodeAvailable());
+        for(String id:ids.split(",")){
+            File workspace=new File(System.getProperty("graphics.work"),"still-probe/"+id);workspace.mkdirs();
+            SceneAdapter.Report report=SceneAdapter.inspect(asDownloaded(new File(workshop,id),workspace),workspace);File adapted=new File(workspace,"scene.zip");SceneAdapter.write(report,adapted,new NodeTranslator(root));report.scene.close();
+            try(WallpaperContent.Scene scene=WallpaperContent.scene(adapted)){
+                // WVB_STILL_FRAME: a script frame traced on the phone (script-frame-N.json), applied as the phone applies it.
+                String traced=System.getenv("WVB_STILL_FRAME");
+                if(traced!=null&&!traced.isBlank()){JSONObject out=new JSONObject(new String(java.nio.file.Files.readAllBytes(new File(traced).toPath()),java.nio.charset.StandardCharsets.UTF_8)).getJSONObject("output");JSONObject layers=out.optJSONObject("layers");
+                    if(layers!=null)for(java.util.Iterator<String> it=layers.keys();it.hasNext();){String key=it.next();org.json.JSONArray v=layers.getJSONArray(key);float[] f=new float[v.length()];for(int q=0;q<f.length;q++)f[q]=(float)v.optDouble(q,0);scene.applyScript(Integer.parseInt(key),f);}
+                    JSONObject texts=out.optJSONObject("texts");if(texts!=null)for(java.util.Iterator<String> it=texts.keys();it.hasNext();){String key=it.next();org.json.JSONArray t=texts.getJSONArray(key);scene.applyText(Integer.parseInt(key),t.optString(0),(float)t.optDouble(1,Double.NaN),null);}}
+                float ratio=960f/Math.max(scene.width,scene.height);
+                android.graphics.Bitmap frame=android.graphics.Bitmap.createBitmap(Math.round(scene.width*ratio),Math.round(scene.height*ratio),android.graphics.Bitmap.Config.ARGB_8888);
+                android.graphics.Canvas c=new android.graphics.Canvas(frame);c.drawColor(android.graphics.Color.BLACK);c.scale(ratio,ratio);
+                ScenePainter.layers(c,scene,new android.graphics.Paint(3),new JSONObject(),null,0,0,false,1);
+                try(FileOutputStream out=new FileOutputStream(new File(workspace,traced!=null&&!traced.isBlank()?"still-scripted.png":"still.png"))){frame.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out);}frame.recycle();
+            }
         }
     }
     /** Diagnostic only: WVB_ROTATION_PROBE=id renders a full clip with both rotation signs for comparison with preview.gif. */

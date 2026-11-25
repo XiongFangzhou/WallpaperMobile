@@ -16,10 +16,20 @@ final class SceneEffects {
     interface Translator {String[] translate(String vertex,String fragment,JSONObject combos,JSONObject includes)throws Exception;}
 
     /** One effect pass on a layer. Slot 0 is the previous result; other slots hold a Bitmap or an engine texture name. */
+    /** Wallpaper Engine's name for the picture drawn so far, below the layer being processed. */
+    static final String FULL_FRAME="_rt_FullFrameBuffer";
     static final class Effect {
         final String name;String vertex,fragment;final JSONObject combos;final List<Object> textures;final Map<String,float[]> uniforms;
         // Original sources until translation; dropped afterwards to keep memory low.
         String sourceVertex,sourceFragment;JSONObject includes;
+        /** Multi-pass routing: passes of one effect share a group; target is a named buffer (null = the effect's result),
+         *  bind maps texture slots to "previous" or buffer names, fbos (first pass only) declares the buffers {name, scale}.
+         *  A copy pass has no shaders and copies bind slot 0 into its target. */
+        int group;String target;final Map<Integer,String> bind=new HashMap<>();JSONArray fbos;boolean copy;
+        /** Uniforms bound to author properties (uniform → property); the phone setting replaces their value. */
+        final Map<String,String> bound=new HashMap<>();
+        /** Author-property switch for the whole effect [[name, condition or null]]; off when it does not hold. */
+        JSONArray when;boolean off;
         // Runtime state owned by SceneGpu on its GL thread.
         int program;boolean failed;
         Effect(String name,String vertex,String fragment,JSONObject combos,List<Object> textures,Map<String,float[]> uniforms){this.name=name;this.vertex=vertex;this.fragment=fragment;this.combos=combos;this.textures=textures;this.uniforms=uniforms;}
@@ -37,26 +47,60 @@ final class SceneEffects {
     /** Shader headers the author bundled under shaders/, keyed the way #include names them. */
     static JSONObject includes(ContentArchive archive)throws Exception {
         JSONObject result=new JSONObject();
+        // Wallpaper Engine's original headers when its assets are available; the package's own headers win.
+        java.io.File engine=archive.fallbackRoot()==null?null:new java.io.File(archive.fallbackRoot(),"shaders");
+        java.io.File[] headers=engine==null?null:engine.listFiles((dir,name)->name.endsWith(".h"));
+        if(headers!=null)for(java.io.File h:headers)if(h.length()<=512*1024)result.put(h.getName(),stripBom(new String(java.nio.file.Files.readAllBytes(h.toPath()),StandardCharsets.UTF_8)));
         for(String name:archive.names())if(name.startsWith("shaders/")&&name.endsWith(".h"))result.put(name.substring(8),stripBom(new String(archive.read(name,512*1024),StandardCharsets.UTF_8)));
         return result;
     }
 
-    /** Reads one effect instance; throws with a user-readable reason when it cannot run on the phone. */
-    static Effect read(ContentArchive archive,JSONObject instance,JSONObject includes)throws Exception {
+    /** Reads one effect instance as its passes; throws with a user-readable reason when it cannot run on the phone. */
+    static List<Effect> read(ContentArchive archive,JSONObject instance,JSONObject includes,int group)throws Exception {
         JSONObject effect=WallpaperContent.json(archive,ContentArchive.path(instance.getString("file")));
         JSONArray passes=effect.optJSONArray("passes");
-        if(passes==null||passes.length()!=1)throw new IOException("多通道特效尚不支持");
-        JSONObject pass=passes.getJSONObject(0);
-        if(pass.length()!=1||!pass.has("material"))throw new IOException("依赖其他画面的特效尚不支持");
-        JSONObject material=WallpaperContent.json(archive,ContentArchive.path(pass.getString("material"))).getJSONArray("passes").getJSONObject(0);
+        if(passes==null||passes.length()==0)throw new IOException("特效没有渲染步骤");if(passes.length()>12)throw new IOException("特效渲染步骤过多");
+        Map<String,Integer> declared=new LinkedHashMap<>();JSONArray fbos=new JSONArray();JSONArray list=effect.optJSONArray("fbos");
+        if(list!=null)for(int i=0;i<list.length();i++){
+            JSONObject fbo=list.getJSONObject(i);String name=fbo.optString("name");if(!name.startsWith("_rt_")||declared.size()>=8)throw new IOException("特效缓冲声明无效");
+            if(fbo.has("width")||fbo.has("height"))throw new IOException("固定尺寸的特效缓冲尚不支持");
+            int scale=Math.max(1,Math.min(16,fbo.optInt("scale",1)));declared.put(name,scale);fbos.put(new JSONObject().put("name",name).put("scale",scale));
+        }
+        JSONArray overrides=instance.optJSONArray("passes");List<Effect> result=new ArrayList<>();
+        try{
+            for(int i=0;i<passes.length();i++){
+                JSONObject pass=passes.getJSONObject(i);
+                if(pass.has("conditions")||pass.has("compose"))throw new IOException("带条件或合成的特效步骤尚不支持");
+                String target=pass.optString("target","");if(!target.isEmpty()&&!declared.containsKey(target))throw new IOException("特效依赖整幅画面 "+target);
+                Map<Integer,String> bind=new HashMap<>();JSONArray binds=pass.optJSONArray("bind");
+                if(binds!=null)for(int k=0;k<binds.length();k++){JSONObject b=binds.getJSONObject(k);String name=b.optString("name");int index=b.optInt("index",-1);
+                    if(index<0||index>=MAX_SLOTS)throw new IOException("特效绑定槽位无效");if(!name.equals("previous")&&!declared.containsKey(name))throw new IOException("特效依赖整幅画面 "+name);bind.put(index,name);}
+                Effect step;
+                if(pass.has("command")){
+                    if(!pass.optString("command").equals("copy"))throw new IOException("特效步骤 "+pass.optString("command")+" 尚不支持");
+                    String source=pass.optString("source");if(!source.equals("previous")&&!declared.containsKey(source)||target.isEmpty())throw new IOException("特效复制步骤无效");
+                    step=new Effect(kind(instance),null,null,new JSONObject(),new ArrayList<>(Collections.singletonList(null)),new LinkedHashMap<>());step.copy=true;bind.put(0,source);
+                }else{
+                    JSONObject override=overrides!=null&&i<overrides.length()&&overrides.optJSONObject(i)!=null?overrides.getJSONObject(i):new JSONObject();
+                    step=pass(archive,instance,pass.getString("material"),override,includes,declared.keySet(),bind);
+                }
+                step.group=group;step.target=target.isEmpty()?null:target;step.bind.putAll(bind);if(i==0)step.fbos=fbos;result.add(step);
+            }
+            if(result.get(result.size()-1).target!=null)throw new IOException("特效最后一步没有输出到图层");
+            return result;
+        }catch(Exception|OutOfMemoryError failure){for(Effect e:result)e.recycle();throw failure;}
+    }
+
+    private static Effect pass(ContentArchive archive,JSONObject instance,String materialFile,JSONObject override,JSONObject includes,Set<String> buffers,Map<Integer,String> bind)throws Exception {
+        JSONObject material=WallpaperContent.json(archive,ContentArchive.path(materialFile)).getJSONArray("passes").getJSONObject(0);
         String blending=material.optString("blending","normal");if(!blending.equals("normal")&&!blending.isEmpty())throw new IOException("特效混合方式尚不支持");
         String shader=material.getString("shader");
         String vertex=text(archive,"shaders/"+shader+".vert"),fragment=text(archive,"shaders/"+shader+".frag");
-        JSONObject override=instance.optJSONArray("passes")==null||instance.getJSONArray("passes").length()==0?new JSONObject():instance.getJSONArray("passes").getJSONObject(0);
 
         // Texture slots: material defaults, then the instance's own textures, then annotation defaults.
         Object[] names=new Object[MAX_SLOTS];boolean[] bound=new boolean[MAX_SLOTS];
         fill(names,bound,material.optJSONArray("textures"));fill(names,bound,override.optJSONArray("textures"));
+        for(int slot:bind.keySet())bound[slot]=true;
         Map<Integer,JSONObject> slotMeta=new HashMap<>();Map<String,JSONObject> uniformMeta=new LinkedHashMap<>();Map<String,String> types=new HashMap<>();
         for(String source:new String[]{vertex,fragment}){
             Matcher m=ANNOTATED.matcher(source);
@@ -67,34 +111,40 @@ final class SceneEffects {
         for(Map.Entry<Integer,JSONObject> slot:slotMeta.entrySet()){
             int index=slot.getKey();if(index<1||index>=MAX_SLOTS)continue;String combo=slot.getValue().optString("combo");
             if(bound[index]&&!combo.isEmpty())combos.put(combo,1);
-            if(names[index]==null&&!slot.getValue().optString("default").isEmpty())names[index]=slot.getValue().optString("default");
+            if(names[index]==null&&!bind.containsKey(index)&&!slot.getValue().optString("default").isEmpty())names[index]=slot.getValue().optString("default");
         }
         copy(override.optJSONObject("combos"),combos);
 
-        List<Object> textures=new ArrayList<>();textures.add(null);int last=0;for(int i=1;i<MAX_SLOTS;i++)if(names[i]!=null)last=i;
+        List<Object> textures=new ArrayList<>();textures.add(null);int last=0;for(int i=1;i<MAX_SLOTS;i++)if(names[i]!=null||bind.containsKey(i))last=i;
         try{
             for(int i=1;i<=last;i++){
+                if(bind.containsKey(i)){textures.add("util/black");continue;}
                 Object name=names[i];
                 if(name==null){textures.add("util/black");continue;}
                 String value=String.valueOf(name);
+                if(value.startsWith("_rt_")){if(!buffers.contains(value)&&!value.equals(FULL_FRAME))throw new IOException("特效依赖整幅画面 "+value);bind.put(i,value);textures.add("util/black");continue;}
+                // The real engine texture when Wallpaper Engine's assets are available, otherwise a synthesized stand-in.
+                String asset=null;try{asset=WallpaperContent.asset(archive,value);}catch(IOException missing){asset=null;}
+                if(asset!=null){textures.add(scaled(WallpaperContent.bitmap(archive.read(asset,32*1024*1024))));continue;}
                 if(ENGINE_TEXTURES.contains(value)){textures.add(value);continue;}
-                if(value.startsWith("util/")||value.startsWith("_rt_"))throw new IOException("特效依赖引擎贴图 "+value);
-                textures.add(scaled(WallpaperContent.bitmap(archive.read(WallpaperContent.asset(archive,value),32*1024*1024))));
+                throw new IOException("特效依赖引擎贴图 "+value);
             }
         }catch(Exception|OutOfMemoryError failure){for(Object t:textures)if(t instanceof Bitmap b)b.recycle();throw failure;}
 
         // Material values bind to uniforms through the shader annotations' "material" names.
         JSONObject constants=new JSONObject();copy(material.optJSONObject("constantshadervalues"),constants);copy(override.optJSONObject("constantshadervalues"),constants);
-        Map<String,float[]> uniforms=new LinkedHashMap<>();
+        Map<String,float[]> uniforms=new LinkedHashMap<>();Map<String,String> boundUniforms=new HashMap<>();
         for(Map.Entry<String,JSONObject> entry:uniformMeta.entrySet()){
             JSONObject meta=entry.getValue();Object value=lookup(constants,meta.optString("material"));if(value==null)value=meta.opt("default");
+            if(value instanceof JSONObject b&&b.opt("user") instanceof String property&&!property.isEmpty())boundUniforms.put(entry.getKey(),property);
             float[] parsed=numbers(value,width(types.get(entry.getKey())));if(parsed!=null)uniforms.put(entry.getKey(),parsed);
         }
-        Effect result=new Effect(kind(instance),null,null,combos,textures,uniforms);result.sourceVertex=vertex;result.sourceFragment=fragment;result.includes=includes;return result;
+        Effect result=new Effect(kind(instance),null,null,combos,textures,uniforms);result.bound.putAll(boundUniforms);result.sourceVertex=vertex;result.sourceFragment=fragment;result.includes=includes;return result;
     }
 
     /** Translate in place; false (with a reason) when the translator rejects the shader. */
     static boolean translate(Effect effect,Translator translator,List<String> failures){
+        if(effect.copy)return true;
         try{
             String[] glsl=translator.translate(effect.sourceVertex,effect.sourceFragment,effect.combos,effect.includes);
             if(glsl==null||glsl.length!=2||!glsl[0].startsWith("#version 300 es")||!glsl[1].startsWith("#version 300 es"))throw new IOException("翻译结果无效");
@@ -107,11 +157,16 @@ final class SceneEffects {
     static JSONObject describe(Effect effect,List<String> textureFiles)throws JSONException {
         JSONArray textures=new JSONArray();for(int i=0;i<effect.textures.size();i++){Object t=effect.textures.get(i);textures.put(t==null?JSONObject.NULL:t instanceof String?t:textureFiles.get(i));}
         JSONObject uniforms=new JSONObject();for(Map.Entry<String,float[]> u:effect.uniforms.entrySet()){JSONArray values=new JSONArray();for(float v:u.getValue())values.put((double)v);uniforms.put(u.getKey(),values);}
-        return new JSONObject().put("name",effect.name).put("vertex",effect.vertex).put("fragment",effect.fragment).put("textures",textures).put("uniforms",uniforms);
+        JSONObject out=new JSONObject().put("name",effect.name).put("textures",textures).put("uniforms",uniforms).put("group",effect.group);
+        if(effect.copy)out.put("copy",true);else out.put("vertex",effect.vertex).put("fragment",effect.fragment);
+        if(effect.target!=null)out.put("target",effect.target);if(effect.fbos!=null&&effect.fbos.length()>0)out.put("fbos",effect.fbos);
+        if(!effect.bound.isEmpty())out.put("bound",new JSONObject(effect.bound));if(effect.when!=null)out.put("when",effect.when);
+        if(!effect.bind.isEmpty()){JSONObject bind=new JSONObject();for(Map.Entry<Integer,String> b:effect.bind.entrySet())bind.put(Integer.toString(b.getKey()),b.getValue());out.put("bind",bind);}
+        return out;
     }
     static Effect parse(JSONObject value,ContentArchive archive,long[] pixels,long budget)throws Exception {
-        String vertex=value.getString("vertex"),fragment=value.getString("fragment");
-        if(!vertex.startsWith("#version 300 es")||!fragment.startsWith("#version 300 es")||vertex.length()>512*1024||fragment.length()>512*1024)throw new IOException("特效着色器无效");
+        boolean copy=value.optBoolean("copy");String vertex=copy?null:value.getString("vertex"),fragment=copy?null:value.getString("fragment");
+        if(!copy&&(!vertex.startsWith("#version 300 es")||!fragment.startsWith("#version 300 es")||vertex.length()>512*1024||fragment.length()>512*1024))throw new IOException("特效着色器无效");
         JSONArray list=value.getJSONArray("textures");if(list.length()<1||list.length()>MAX_SLOTS)throw new IOException("特效贴图数量无效");
         List<Object> textures=new ArrayList<>();textures.add(null);
         try{
@@ -124,7 +179,15 @@ final class SceneEffects {
         }catch(Exception|OutOfMemoryError failure){for(Object t:textures)if(t instanceof Bitmap b)b.recycle();throw failure;}
         Map<String,float[]> uniforms=new LinkedHashMap<>();JSONObject u=value.optJSONObject("uniforms");
         if(u!=null)for(Iterator<String> keys=u.keys();keys.hasNext();){String key=keys.next();float[] parsed=numbers(u.get(key),0);if(parsed!=null&&key.matches("[A-Za-z_]\\w{0,63}"))uniforms.put(key,parsed);}
-        return new Effect(value.optString("name","特效"),vertex,fragment,new JSONObject(),textures,uniforms);
+        Effect effect=new Effect(value.optString("name","特效"),vertex,fragment,new JSONObject(),textures,uniforms);effect.copy=copy;effect.group=value.optInt("group",0);
+        String target=value.optString("target","");if(!target.isEmpty()){if(!target.startsWith("_rt_"))throw new IOException("特效缓冲无效");effect.target=target;}
+        JSONArray fbos=value.optJSONArray("fbos");if(fbos!=null){if(fbos.length()>8)throw new IOException("特效缓冲过多");effect.fbos=fbos;}
+        effect.when=value.optJSONArray("when");
+        JSONObject boundUniforms=value.optJSONObject("bound");
+        if(boundUniforms!=null)for(Iterator<String> keys=boundUniforms.keys();keys.hasNext();){String key=keys.next();if(uniforms.containsKey(key))effect.bound.put(key,boundUniforms.optString(key));}
+        JSONObject bind=value.optJSONObject("bind");
+        if(bind!=null)for(Iterator<String> keys=bind.keys();keys.hasNext();){String key=keys.next();int slot;try{slot=Integer.parseInt(key);}catch(NumberFormatException e){continue;}String name=bind.getString(key);if(slot>=0&&slot<MAX_SLOTS&&(name.equals("previous")||name.startsWith("_rt_")))effect.bind.put(slot,name);}
+        return effect;
     }
 
     private static String text(ContentArchive archive,String name)throws Exception {

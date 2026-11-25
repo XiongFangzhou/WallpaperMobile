@@ -29,12 +29,29 @@ class Package:
             self.entries[name.replace('\\', '/')] = (offset, size)
         self.base = self.file.tell()
 
+    def has(self, name):
+        return name in self.entries or (ENGINE is not None and (ENGINE / name).is_file())
+
     def text(self, name):
+        if name not in self.entries and ENGINE is not None and (ENGINE / name).is_file():
+            # Wallpaper Engine's own assets fill in what the package lacks, as on the phone.
+            return (ENGINE / name).read_text(encoding='utf-8-sig', errors='replace')
         offset, size = self.entries[name]; self.file.seek(self.base + offset)
         return self.file.read(size).decode('utf-8-sig', 'replace')
 
     def json(self, name):
-        return json.loads(self.text(name))
+        return json.loads(re.sub(r',(\s*[}\]])', r'\1', self.text(name)))
+
+
+# WVB_ENGINE_ASSETS: Wallpaper Engine's assets folder (the phone downloads the same files with the user's licence).
+ENGINE = pathlib.Path(os.environ['WVB_ENGINE_ASSETS']) if os.environ.get('WVB_ENGINE_ASSETS') else None
+
+
+def engine_headers():
+    """Original shader headers, used for #include names the package does not bundle."""
+    if ENGINE is None or not (ENGINE / 'shaders').is_dir():
+        return {}
+    return {path.name: path.read_text(encoding='utf-8-sig', errors='replace') for path in (ENGINE / 'shaders').glob('*.h')}
 
 
 def texture_combos(sources, bound):
@@ -57,7 +74,8 @@ def texture_combos(sources, bound):
 def requests_for(folder):
     package = Package(next(folder.glob('*.pkg')))
     scene = package.json('scene.json')
-    includes = {name[len('shaders/'):]: package.text(name) for name in package.entries if name.startswith('shaders/') and name.endswith('.h')}
+    includes = engine_headers()
+    includes.update({name[len('shaders/'):]: package.text(name) for name in package.entries if name.startswith('shaders/') and name.endswith('.h')})
     for layer in scene.get('objects', []):
         if not isinstance(layer.get('image'), str):
             continue
@@ -66,25 +84,38 @@ def requests_for(folder):
             try:
                 effect = package.json(instance['file'])
                 passes = effect.get('passes', [])
-                if len(passes) != 1 or set(passes[0]) != {'material'}:
-                    yield kind, None, 'multi-pass or render-target effect'
+                declared = {fbo.get('name') for fbo in effect.get('fbos') or []}
+                if not passes or any('command' in p or 'conditions' in p or 'compose' in p for p in passes):
+                    yield kind, None, 'unsupported pass commands'
                     continue
-                material = package.json(passes[0]['material'])['passes'][0]
-                shader = material['shader']
-                vertex, fragment = package.text('shaders/' + shader + '.vert'), package.text('shaders/' + shader + '.frag')
+                bound_names = {b.get('name') for p in passes for b in p.get('bind') or []} | {p.get('target') for p in passes if p.get('target')}
+                if any(n and n != 'previous' and n not in declared for n in bound_names):
+                    yield kind, None, 'reads the whole frame'
+                    continue
+                staged = []
+                for index, item in enumerate(passes):
+                    material = package.json(item['material'])['passes'][0]
+                    shader = material['shader']
+                    staged.append((index, material, package.text('shaders/' + shader + '.vert'), package.text('shaders/' + shader + '.frag')))
             except (KeyError, ValueError, IndexError) as error:
                 yield kind, None, 'missing effect data: ' + str(error)
                 continue
-            override = (instance.get('passes') or [{}])[0]
-            textures = list(material.get('textures') or [])
-            for index, name in enumerate(override.get('textures') or []):
-                if name is not None:
-                    textures += [None] * (index + 1 - len(textures)); textures[index] = name
-            bound = {index for index, name in enumerate(textures) if name}
-            combos = dict(material.get('combos') or {})
-            combos.update(texture_combos((vertex, fragment), bound))
-            combos.update(override.get('combos') or {})
-            yield kind, {'vertex': vertex, 'fragment': fragment, 'combos': combos, 'includes': includes}, None
+            for index, material, vertex, fragment in staged:
+                overrides = instance.get('passes') or []
+                override = overrides[index] if index < len(overrides) and isinstance(overrides[index], dict) else {}
+                yield from one_pass(kind, material, vertex, fragment, override, includes)
+
+
+def one_pass(kind, material, vertex, fragment, override, includes):
+    textures = list(material.get('textures') or [])
+    for index, name in enumerate(override.get('textures') or []):
+        if name is not None:
+            textures += [None] * (index + 1 - len(textures)); textures[index] = name
+    bound = {index for index, name in enumerate(textures) if name}
+    combos = dict(material.get('combos') or {})
+    combos.update(texture_combos((vertex, fragment), bound))
+    combos.update(override.get('combos') or {})
+    yield kind, {'vertex': vertex, 'fragment': fragment, 'combos': combos, 'includes': includes}, None
 
 
 def main():

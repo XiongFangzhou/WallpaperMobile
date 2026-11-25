@@ -19,26 +19,33 @@ final class WallpaperContent {
   String p=project(a);if(p.isEmpty())return "";JSONObject meta=json(a,p);String type=meta.optString("type");
   if(type.equalsIgnoreCase("video")||type.equalsIgnoreCase("image")||type.equalsIgnoreCase("scene")&&meta.optString("file").toLowerCase(java.util.Locale.ROOT).endsWith(".pkg")){String name=meta.optString("file");return asset(a,name);}return "";
  }
- static final class Layer {Bitmap bitmap,reveal;float revealSize=.3f;String name="";float x,y,w,h,depth=1,alpha=1,rotation;String text;List<TexturePixels.Frame> frames=List.of();final List<SceneEffects.Effect> effects=new ArrayList<>();
+ static final class Layer {Bitmap bitmap,reveal;float revealSize=.3f;String name="";float x,y,w,h,depth=1,alpha=1,rotation;SceneText text;byte[] fontData;String fontName;List<TexturePixels.Frame> frames=List.of();final List<SceneEffects.Effect> effects=new ArrayList<>();
   /** Skeletal layer: the mesh replaces the rectangle; model units map to the rectangle through puppetW/puppetH (the layer's unscaled size). */
   /** WE colour blend mode (0 normal … 32, numbering of common_blending.h) and additive material blending. */
   int blend;boolean additive;
+  /** Author property bound to this layer's opacity; the phone setting (user.NAME) replaces the saved value. */
+  String alphaProperty;
+  float opacity(JSONObject options){if(alphaProperty!=null&&options!=null&&options.has("user."+alphaProperty))return EffectMotion.clamp((float)options.optDouble("user."+alphaProperty,alpha),0,1);return alpha;}
   /** Scripted scenes: the source object, whether it is shown, its unscaled size and the static transform of its parents (x, y, sx, sy, radians; y up). */
   int objectId=-1;boolean visible=true;float baseW,baseH;float[] frame;
+  /** Visibility as converted (restored when scripts report "as saved", -1); whether scripts place the layer. */
+  boolean savedVisible=true,scriptPlaced;
   /** Author-property conditions [[name, expected value or null for on/off], …] that must all hold for the layer to show. */
   JSONArray when;
   /** Drawn now: not hidden by a script and every property condition holds (phone choice in options as user.NAME, else the author's default). */
-  boolean shown(JSONObject options,JSONObject properties){
-   if(!visible)return false;if(when==null)return true;
-   for(int i=0;i<when.length();i++){JSONArray c=when.optJSONArray(i);if(c==null)continue;String name=c.optString(0);
-    Object value=options!=null&&options.has("user."+name)?options.opt("user."+name):properties==null||properties.optJSONObject(name)==null?null:properties.optJSONObject(name).opt("value");
-    if(value==null)continue;
-    if(c.isNull(1)){if(Boolean.FALSE.equals(value)||"false".equalsIgnoreCase(String.valueOf(value))||"0".equals(String.valueOf(value)))return false;}
-    else if(!String.valueOf(value).equals(c.optString(1)))return false;}
-   return true;
-  }
+  boolean shown(JSONObject options,JSONObject properties){return visible&&Scene.conditions(when,options,properties);}
+  /** Layer colour (multiplies the image) and the author property bound to it. */
+  float[] tint={1,1,1};String tintProperty;
+  /** Composition layer: its children (group == its index) are drawn together and its effects apply to the result. */
+  boolean compose;int group=-1;
+  /** Fullscreen layer (a composition layer that starts from everything drawn below it, which its effects then replace). */
+  boolean fullscreen;
+  /** Local transforms from this object up to the scene root {ox, oy, sx, sy, radians} and the author properties bound to origin, scale and angles of each. */
+  float[][] chain;String[][] chainBind;
   /** Particle system drawn instead of the bitmap rectangle; transform is the emitter in scene space {x, y, sx, sy, radians; y up}. */
   String particleData;Particles particles;float[] particleTransform;
+  /** Kept so author settings bound to the system's instance overrides can rebuild it. */
+  JSONObject particleSystem,particleOverride;float[][] particleFrames;boolean particleAdditive;
   PuppetModel puppet;byte[] puppetData;float puppetW,puppetH;List<PuppetModel.Track> tracks=List.of();
   /** Child hanging from a puppet attachment: parent layer index, attachment, and its own origin/angle in that attachment's frame. */
   int attachParent=-1;String attachName="";float attachX,attachY,attachAngle;
@@ -57,26 +64,127 @@ final class WallpaperContent {
  static final class Scene implements AutoCloseable {int width=1080,height=2400;final ArrayList<Layer> layers=new ArrayList<>();JSONObject defaults=new JSONObject();
   /** scripts.json of an adapted scene, run by SceneScripts; null when the scene has no scripts. */
   String scripts;private double particleClock=-1;
+  /** Value of an author property: the phone's choice (options user.NAME), else the author's default. */
+  static Object user(String name,JSONObject options,JSONObject properties){
+   if(options!=null&&options.has("user."+name))return options.opt("user."+name);
+   JSONObject p=properties==null?null:properties.optJSONObject(name);return p==null?null:p.opt("value");
+  }
+  /** All [[name, expected value or null for on/off]] conditions hold. */
+  static boolean conditions(JSONArray when,JSONObject options,JSONObject properties){
+   if(when==null)return true;
+   for(int i=0;i<when.length();i++){JSONArray c=when.optJSONArray(i);if(c==null)continue;Object value=user(c.optString(0),options,properties);if(value==null)continue;
+    if(c.isNull(1)?!PropertyCondition.truthy(value):!String.valueOf(value).equals(c.optString(1)))return false;}
+   return true;
+  }
+  private String userKey;
+  /**
+   * Applies author settings to everything bound to them: layer place (origin, scale, angles along the parent chain),
+   * colour, effect switches and parameters, and particle settings. Cheap when nothing changed.
+   */
+  void applyUser(JSONObject options){
+   StringBuilder key=new StringBuilder();if(options!=null)for(Iterator<String> k=options.keys();k.hasNext();){String n=k.next();if(n.startsWith("user."))key.append(n).append('=').append(options.opt(n)).append(';');}
+   String now=key.toString();if(now.equals(userKey))return;userKey=now;
+   if(bloomOnProperty!=null){Object v=user(bloomOnProperty,options,properties);if(v!=null)bloom=PropertyCondition.truthy(v);}
+   if(bloomStrengthProperty!=null){float[] v=UserValues.vector(user(bloomStrengthProperty,options,properties),1);if(v!=null)bloomStrength=v[0];}
+   if(bloomThresholdProperty!=null){float[] v=UserValues.vector(user(bloomThresholdProperty,options,properties),1);if(v!=null)bloomThreshold=v[0];}
+   if(bloomTintProperty!=null){float[] v=UserValues.vector(user(bloomTintProperty,options,properties),3);if(v!=null)bloomTint=new float[]{v[0],v[1],v[2]};}
+   for(Layer l:layers){
+    // Layers placed by scripts keep the scripts' position; setting-driven placement is for the others.
+    if(l.chain!=null&&!l.scriptPlaced)place(l,options);
+    if(l.tintProperty!=null){float[] c=UserValues.vector(user(l.tintProperty,options,properties),3);if(c!=null)l.tint=new float[]{c[0],c[1],c[2]};}
+    for(SceneEffects.Effect e:l.effects){
+     if(e.when!=null)e.off=!conditions(e.when,options,properties);
+     for(Map.Entry<String,String> b:e.bound.entrySet()){float[] old=e.uniforms.get(b.getKey());float[] v=UserValues.vector(user(b.getValue(),options,properties),old==null?0:old.length);if(v!=null&&(old==null||v.length==old.length))e.uniforms.put(b.getKey(),v);}
+    }
+    if(l.particleSystem!=null&&l.particleOverride!=null)rebuildParticles(l,options);
+    if(l.text!=null){
+     if(l.text.valueProperty!=null){Object v=user(l.text.valueProperty,options,properties);if(v!=null)l.text.value=String.valueOf(v);}
+     if(l.text.sizeProperty!=null){Object v=user(l.text.sizeProperty,options,properties);if(v instanceof Number n&&Double.isFinite(n.doubleValue()))l.text.pointsize=n.floatValue();else if(v!=null)try{l.text.pointsize=Float.parseFloat(String.valueOf(v));}catch(NumberFormatException ignored){}}
+    }
+   }
+  }
+  /** Script-side changes to a text layer (ITextLayer text, pointsize, color). */
+  void applyText(int objectId,String value,float pointsize,float[] color){
+   for(Layer l:layers){if(l.objectId!=objectId||l.text==null)continue;if(value!=null)l.text.value=value;if(Float.isFinite(pointsize)&&pointsize>0)l.text.pointsize=pointsize;if(color!=null&&color.length>=3){boolean changed=l.text.scriptColor!=null&&!Arrays.equals(l.text.scriptColor,color);l.text.scriptColor=color.clone();if(changed&&!l.text.opaque)l.tint=new float[]{color[0],color[1],color[2]};}}
+  }
+  /**
+   * Redraws text layers whose text or size changed. The box follows the text, keeping its aligned edge in place;
+   * replaced bitmaps go to retired so the renderer can free them.
+   */
+  void refreshTexts(List<Bitmap> retired){
+   for(Layer l:layers){
+    if(l.text==null||!l.text.stale())continue;
+    Bitmap next;try{next=l.text.draw();}catch(RuntimeException|OutOfMemoryError failed){continue;}
+    float sx=l.baseW>0?l.w/l.baseW:1,sy=l.baseH>0?l.h/l.baseH:1,nw=l.text.blockW*sx,nh=l.text.blockH*sy;
+    l.x-=(nw-l.w)*l.text.shiftX();l.y-=(nh-l.h)*l.text.shiftY();l.w=nw;l.h=nh;l.baseW=l.text.blockW;l.baseH=l.text.blockH;
+    if(l.bitmap!=null)retired.add(l.bitmap);l.bitmap=next;
+   }
+  }
+  private void place(Layer l,JSONObject options){
+   float x=0,y=0,sx=1,sy=1,a=0;
+   for(int n=0;n<l.chain.length;n++){
+    float[] node=l.chain[n].clone();String[] b=l.chainBind[n];
+    if(b[0]!=null){float[] v=UserValues.vector(user(b[0],options,properties),2);if(v!=null){node[0]=v[0];node[1]=v[1];}}
+    if(b[1]!=null){float[] v=UserValues.vector(user(b[1],options,properties),2);if(v!=null){node[2]=v[0];node[3]=v[1];}}
+    if(b[2]!=null){float[] v=UserValues.vector(user(b[2],options,properties),3);if(v!=null)node[4]=v[v.length-1];}
+    if(n==0){x=node[0];y=node[1];sx=node[2];sy=node[3];a=node[4];continue;}
+    double c=Math.cos(node[4]),s=Math.sin(node[4]);float lx=x*node[2],ly=y*node[3];
+    x=node[0]+(float)(lx*c-ly*s);y=node[1]+(float)(lx*s+ly*c);sx*=node[2];sy*=node[3];a+=node[4];
+   }
+   if(!Float.isFinite(x)||!Float.isFinite(y)||!(sx>0)||!(sy>0))return;
+   if(l.particles!=null){l.particleTransform=new float[]{x,y,sx,sy,a};return;}
+   float w=l.baseW*sx,h=l.baseH*sy;if(!(w>0&&h>0)||w>65536||h>65536)return;
+   l.w=w;l.h=h;l.x=x-w/2;l.y=height-y-h/2;l.rotation=-(float)Math.toDegrees(a);
+  }
+  private void rebuildParticles(Layer l,JSONObject options){
+   try{
+    JSONObject override=new JSONObject(l.particleOverride.toString());boolean changed=false;
+    for(Iterator<String> k=l.particleOverride.keys();k.hasNext();){String n=k.next();Object v=l.particleOverride.opt(n);
+     if(v instanceof JSONObject b&&b.opt("user") instanceof String u){Object chosen=user(u,options,properties);if(chosen!=null){override.put(n,new JSONObject().put("value",chosen instanceof String c&&c.startsWith("#")?UserValues.forScripts(c):chosen));changed=true;}}}
+    if(!changed)return;Particles next=new Particles(SceneParticles.spec(l.particleSystem,override,l.particleAdditive,l.particleFrames),System.nanoTime());
+    next.emitting=l.particles.emitting;l.particles=next;
+   }catch(Exception ignored){}
+  }
   /** Author switches offered on the phone: name → {type bool|combo, value, label, options}. */
   JSONObject properties=new JSONObject();
   /** Finger in scene coordinates (y up) for emitters that follow the pointer; set by the renderer each frame. */
   volatile float cursorX,cursorY;volatile boolean cursorDown;
   boolean animated(){if(scripts!=null)return true;for(Layer l:layers)if(l.frames.size()>1||!l.effects.isEmpty()||l.moving()||l.particles!=null)return true;return false;}
   /** Applies a script frame for one source object: origin, scale, angles (x,y,z each), alpha, visible, playing — in WE scene space. */
+  /** 2D camera from scripts (scene units from the canvas centre, y up; zoom relative) and the scene's camera shake. */
+  /** Scene bloom (SceneBloom) and the author properties its fields follow; scripts may change it too. */
+  volatile boolean bloom;volatile float bloomStrength=2,bloomThreshold=.65f;volatile float[] bloomTint={1,1,1};String bloomOnProperty,bloomStrengthProperty,bloomThresholdProperty,bloomTintProperty;
+  void applyBloom(boolean on,float strength,float threshold,float[] tint){bloom=on;if(Float.isFinite(strength))bloomStrength=Math.max(0,Math.min(16,strength));if(Float.isFinite(threshold))bloomThreshold=Math.max(0,Math.min(1,threshold));if(tint!=null&&tint.length>=3)bloomTint=tint;}
+  volatile float cameraX,cameraY,cameraZoom=1;float shakeSpeed,shakeAmplitude,shakeRoughness;boolean shake;
+  void applyCamera(float x,float y,float zoom){if(Float.isFinite(x)&&Float.isFinite(y)&&Math.abs(x)<1e6&&Math.abs(y)<1e6){cameraX=x;cameraY=y;}if(Float.isFinite(zoom)&&zoom>.01f&&zoom<100)cameraZoom=zoom;}
+  /**
+   * Camera offset at a time, scripted position plus shake. Wallpaper Engine documents the shake fields but not their
+   * units; here amplitude is a share of 2% of the canvas' short side and speed/roughness set two noise frequencies.
+   */
+  float[] cameraAt(double seconds){
+   float x=cameraX,y=cameraY;
+   if(shake&&shakeAmplitude>0){double t=seconds*Math.max(.01,shakeSpeed),a=shakeAmplitude*.02*Math.min(width,height),r=Math.max(0,Math.min(4,shakeRoughness));
+    x+=(float)(a*(Math.sin(t*1.31)*.6+Math.sin(t*2.77+1.7)*.4+r*.25*Math.sin(t*7.3+.4)));y+=(float)(a*(Math.sin(t*1.07+2.1)*.6+Math.sin(t*3.19+.3)*.4+r*.25*Math.sin(t*6.1+2.9)));}
+   return new float[]{x,y,cameraZoom};
+  }
   void applyScript(int objectId,float[] s){
    for(Layer l:layers){
     if(l.objectId!=objectId||s.length<11)continue;
-    l.alpha=EffectMotion.clamp(s[9],0,1);l.visible=s[10]>.5f;
+    l.alpha=EffectMotion.clamp(s[9],0,1);l.visible=s[10]<0?l.savedVisible:s[10]>.5f;
     if(l.particles!=null){
      if(s.length>11)l.particles.emitting=s[11]>.5f;
+     if(s.length>=17){l.particleTransform=new float[]{s[12],s[13],s[14],s[15],s[16]};continue;}
      float[] f=l.frame==null?new float[]{0,0,1,1,0}:l.frame;double c=Math.cos(f[4]),sn=Math.sin(f[4]);float lx=s[0]*f[2],ly=s[1]*f[3];
      l.particleTransform=new float[]{(float)(f[0]+lx*c-ly*sn),(float)(f[1]+lx*sn+ly*c),s[3]*f[2],s[4]*f[3],s[8]+f[4]};continue;
     }
     if(l.attachParent>=0||!(l.baseW>0&&l.baseH>0))continue;
-    float[] f=l.frame==null?new float[]{0,0,1,1,0}:l.frame;double c=Math.cos(f[4]),sn=Math.sin(f[4]);float lx=s[0]*f[2],ly=s[1]*f[3];
-    double wx=f[0]+lx*c-ly*sn,wy=f[1]+lx*sn+ly*c;float w=Math.abs(l.baseW*s[3]*f[2]),h=Math.abs(l.baseH*s[4]*f[3]);
+    // Newer runtimes report the world transform through the parents' current (scripted) transforms.
+    float[] f=l.frame==null||s.length>=17?new float[]{0,0,1,1,0}:l.frame;boolean world=s.length>=17;
+    float ox=world?s[12]:s[0],oy=world?s[13]:s[1],ssx=world?s[14]:s[3],ssy=world?s[15]:s[4],angle=world?s[16]:s[8];
+    double c=Math.cos(f[4]),sn=Math.sin(f[4]);float lx=ox*f[2],ly=oy*f[3];
+    double wx=f[0]+lx*c-ly*sn,wy=f[1]+lx*sn+ly*c;float w=Math.abs(l.baseW*ssx*f[2]),h=Math.abs(l.baseH*ssy*f[3]);
     if(!(w>0&&h>0)||!Double.isFinite(wx)||!Double.isFinite(wy)||w>65536||h>65536)continue;
-    l.w=w;l.h=h;l.x=(float)(wx-w/2);l.y=(float)(height-wy-h/2);l.rotation=-(float)Math.toDegrees(s[8]+f[4]);
+    l.scriptPlaced=true;l.w=w;l.h=h;l.x=(float)(wx-w/2);l.y=(float)(height-wy-h/2);l.rotation=-(float)Math.toDegrees(angle+f[4]);
    }
   }
   /** Poses skeletal layers for the time and moves attached children with them; safe to call every frame. */
@@ -112,9 +220,16 @@ final class WallpaperContent {
    JSONObject root=json(a,entry);if(hasRuntime(root))throw new IOException("该场景依赖尚不兼容的脚本、作者属性绑定或特效，不能完整运行");if(own&&!root.optString("format").equals("WallpaperMobileScene/1"))throw new IOException("场景格式版本不支持");
    if(own&&root.optJSONObject("properties")!=null)result.properties=root.getJSONObject("properties");
    if(own&&root.has("scripts")){byte[] scripts=a.read(asset(a,root.getString("scripts")),16*1024*1024);result.scripts=new String(scripts,StandardCharsets.UTF_8);}
-   if(own){result.width=root.optInt("width",1080);result.height=root.optInt("height",2400);result.defaults=root.optJSONObject("effects");if(result.defaults==null)result.defaults=new JSONObject();}
+   if(own){result.width=root.optInt("width",1080);result.height=root.optInt("height",2400);result.defaults=root.optJSONObject("effects");if(result.defaults==null)result.defaults=new JSONObject();
+    JSONObject shake=root.optJSONObject("camera")==null?null:root.getJSONObject("camera").optJSONObject("shake");
+    JSONObject bloom=root.optJSONObject("bloom");
+    if(bloom!=null){result.bloom=bloom.optBoolean("enabled");result.bloomStrength=(float)bloom.optDouble("strength",2);result.bloomThreshold=(float)bloom.optDouble("threshold",.65);float[] t=vector(bloom.opt("tint"),1,1,1);if(t.length>=3)result.bloomTint=t;
+     result.bloomOnProperty=bloom.has("enabledProperty")?bloom.optString("enabledProperty"):null;result.bloomStrengthProperty=bloom.has("strengthProperty")?bloom.optString("strengthProperty"):null;
+     result.bloomThresholdProperty=bloom.has("thresholdProperty")?bloom.optString("thresholdProperty"):null;result.bloomTintProperty=bloom.has("tintProperty")?bloom.optString("tintProperty"):null;}
+    if(shake!=null){result.shake=true;result.shakeSpeed=(float)shake.optDouble("speed",3);result.shakeAmplitude=(float)Math.max(0,Math.min(10,shake.optDouble("amplitude",.5)));result.shakeRoughness=(float)shake.optDouble("roughness",1);}}
    else {JSONObject general=root.optJSONObject("general");JSONObject projection=general==null?null:general.optJSONObject("orthogonalprojection");if(projection!=null){result.width=projection.optInt("width",1080);result.height=projection.optInt("height",2400);}}
-   if(result.width<1||result.height<1||result.width>16384||result.height>16384)throw new IOException("场景尺寸无效");JSONArray list=root.optJSONArray(own?"layers":"objects");if(list==null||list.length()<1||list.length()>(own?64:32))throw new IOException("场景需要 1–"+(own?64:32)+" 个图层");long pixels=0;
+   if(result.width<1||result.height<1||result.width>16384||result.height>16384)throw new IOException("场景尺寸无效");JSONArray list=root.optJSONArray(own?"layers":"objects");if(list==null||list.length()<1||list.length()>(own?4096:32))throw new IOException("场景图层数过多");long pixels=0;
+   HashMap<String,Typeface> typefaces=new HashMap<>();
    for(int i=0;i<list.length();i++){
     JSONObject object=list.getJSONObject(i);if(!own&&!object.optBoolean("visible",true))continue;
     if(!own&&(hasRuntime(object)||object.has("particle")&&!object.isNull("particle")))throw new IOException("该场景包含尚不兼容的 WE 脚本、粒子或特效，不能完整运行");
@@ -122,16 +237,17 @@ final class WallpaperContent {
     if(!own&&!image.isEmpty()&&!image.equals("null")){
      JSONObject model=json(a,asset(a,image));if(hasRuntime(model))throw new IOException("场景模型依赖尚不兼容的特效");String material=model.optString("material");JSONObject mat=json(a,asset(a,material));JSONArray passes=mat.optJSONArray("passes");if(passes==null||passes.length()!=1)throw new IOException("当前只支持单通道基础材质");JSONObject pass=passes.getJSONObject(0);String shader=pass.optString("shader");if(!shader.isEmpty()&&!shader.equals("genericimage2"))throw new IOException("场景使用自定义着色器，当前不能完整运行");JSONArray textures=pass.optJSONArray("textures");if(textures==null||textures.length()!=1)throw new IOException("场景材质纹理不兼容");image=textures.getString(0);
     }
-    if(!image.isEmpty()&&!image.equals("null")){l.bitmap=bitmap(a.read(asset(a,image),32*1024*1024));pixels+=(long)l.bitmap.getWidth()*l.bitmap.getHeight();if(pixels>16*1024*1024)throw new IOException("场景解码内存超过预算");}
-    else if(own&&object.has("text"))l.text=object.optString("text");else throw new IOException("场景包含尚不支持的非图片对象");
-    if(own&&object.has("xrayFile")){l.reveal=bitmap(a.read(asset(a,object.getString("xrayFile")),32*1024*1024));pixels+=(long)l.reveal.getWidth()*l.reveal.getHeight();if(pixels>16*1024*1024)throw new IOException("场景解码内存超过预算");l.revealSize=(float)Math.max(.01,Math.min(1,object.optDouble("xraySize",.3)));}
+    if(!image.isEmpty()&&!image.equals("null")){l.bitmap=bitmap(a.read(asset(a,image),32*1024*1024));pixels+=(long)l.bitmap.getWidth()*l.bitmap.getHeight();if(pixels>SceneBudget.current().pixels())throw new IOException("场景解码内存超过预算");}
+    else if(own&&object.has("text"))l.bitmap=Bitmap.createBitmap(1,1,Bitmap.Config.ARGB_8888);else throw new IOException("场景包含尚不支持的非图片对象");
+    if(own&&object.has("xrayFile")){l.reveal=bitmap(a.read(asset(a,object.getString("xrayFile")),32*1024*1024));pixels+=(long)l.reveal.getWidth()*l.reveal.getHeight();if(pixels>SceneBudget.current().pixels())throw new IOException("场景解码内存超过预算");l.revealSize=(float)Math.max(.01,Math.min(1,object.optDouble("xraySize",.3)));}
     if(own&&object.has("effectsFile")){
-     JSONArray fx=new JSONArray(new String(a.read(asset(a,object.getString("effectsFile")),4*1024*1024),StandardCharsets.UTF_8));if(fx.length()>16)throw new IOException("图层特效过多");
-     long[] budget={pixels};for(int e=0;e<fx.length();e++)l.effects.add(SceneEffects.parse(fx.getJSONObject(e),a,budget,16L*1024*1024));pixels=budget[0];
+     JSONArray fx=new JSONArray(new String(a.read(asset(a,object.getString("effectsFile")),4*1024*1024),StandardCharsets.UTF_8));if(fx.length()>24)throw new IOException("图层特效过多");
+     long[] budget={pixels};for(int e=0;e<fx.length();e++)l.effects.add(SceneEffects.parse(fx.getJSONObject(e),a,budget,SceneBudget.current().pixels()));pixels=budget[0];
     }
     if(own&&object.has("particlesFile")){
      JSONObject data=new JSONObject(new String(a.read(asset(a,object.getString("particlesFile")),8*1024*1024),StandardCharsets.UTF_8));
      float[][] frames=null;JSONArray list2=data.optJSONArray("frames");if(list2!=null&&list2.length()>0){frames=new float[Math.min(1024,list2.length())][];for(int f=0;f<frames.length;f++){JSONArray q=list2.getJSONArray(f);frames[f]=new float[]{(float)q.optDouble(0),(float)q.optDouble(1),(float)q.optDouble(2),(float)q.optDouble(3)};}}
+     l.particleSystem=data.getJSONObject("system");l.particleOverride=data.optJSONObject("override");l.particleFrames=frames;l.particleAdditive=data.optBoolean("additive");
      l.particles=new Particles(SceneParticles.spec(data.getJSONObject("system"),data.optJSONObject("override"),data.optBoolean("additive"),frames),0x5eed0000L+i);
      JSONArray t=data.getJSONArray("transform");l.particleTransform=new float[5];for(int k=0;k<5;k++)l.particleTransform[k]=(float)t.optDouble(k,k==2||k==3?1:0);
     }
@@ -142,10 +258,20 @@ final class WallpaperContent {
      if(tracks!=null)for(int t=0;t<tracks.length()&&t<8;t++){JSONArray tr=tracks.getJSONArray(t);int id=tr.getInt(0);if(!l.puppet.animations.containsKey(id))continue;clips.add(new PuppetModel.Track(id,(float)EffectMotion.clamp((float)tr.optDouble(1,1),0,10),(float)EffectMotion.clamp((float)tr.optDouble(2,1),0,1),tr.optBoolean(3,true)));}
      l.tracks=List.copyOf(clips);
     }
-    if(own)l.when=object.optJSONArray("when");
-    if(own){l.blend=Math.max(0,Math.min(32,object.optInt("blend",0)));l.additive=object.optBoolean("additive");l.objectId=object.optInt("objectId",-1);l.visible=object.optBoolean("visible",true);
+    if(own){l.compose=object.optBoolean("compose");l.fullscreen=l.compose&&object.optBoolean("fullscreen");int g=object.optInt("group",-1);l.group=g>=0&&g<i?g:-1;}
+    if(own){l.when=object.optJSONArray("when");l.tintProperty=object.has("tintProperty")?object.optString("tintProperty"):null;
+     JSONArray tint=object.optJSONArray("tint");if(tint!=null&&tint.length()>=3)l.tint=new float[]{(float)tint.optDouble(0,1),(float)tint.optDouble(1,1),(float)tint.optDouble(2,1)};
+     JSONArray chain=object.optJSONArray("chain");
+     if(chain!=null&&chain.length()>0&&chain.length()<=32){l.chain=new float[chain.length()][];l.chainBind=new String[chain.length()][];
+      for(int c=0;c<chain.length();c++){JSONArray node=chain.getJSONArray(c),v=node.getJSONArray(0),b=node.getJSONArray(1);l.chain[c]=new float[5];for(int k=0;k<5;k++)l.chain[c][k]=(float)v.optDouble(k,k==2||k==3?1:0);l.chainBind[c]=new String[3];for(int k=0;k<3&&k<b.length();k++)l.chainBind[c][k]=b.isNull(k)?null:b.optString(k);}}l.alphaProperty=object.has("alphaProperty")?object.optString("alphaProperty"):null;}
+    if(own){l.blend=Math.max(0,Math.min(32,object.optInt("blend",0)));l.additive=object.optBoolean("additive");l.objectId=object.optInt("objectId",-1);l.visible=object.optBoolean("visible",true);l.savedVisible=l.visible;
      JSONArray base=object.optJSONArray("base");if(base!=null){l.baseW=(float)base.optDouble(0,0);l.baseH=(float)base.optDouble(1,0);}
      JSONArray frame=object.optJSONArray("frame");if(frame!=null&&frame.length()==5){l.frame=new float[5];for(int f=0;f<5;f++)l.frame[f]=(float)frame.optDouble(f,0);}}
+    if(own&&object.optJSONObject("textLayer")!=null){
+     l.text=SceneText.from(object.getJSONObject("textLayer"));String fontFile=object.optString("fontFile",""),fontKey=fontFile+"|"+object.optString("fontName");
+     Typeface face=typefaces.get(fontKey);if(face==null){face=SceneText.typeface(fontFile.isEmpty()?null:a.read(asset(a,fontFile),SceneText.MAX_FONT_BYTES),object.optString("fontName"));typefaces.put(fontKey,face);}
+     l.text.typeface=face;l.text.drawn(l.baseW,l.baseH);
+    }
     if(own&&object.has("attach")){JSONObject at=object.getJSONObject("attach");l.attachParent=at.optInt("layer",-1);l.attachName=at.optString("name");l.attachX=(float)at.optDouble("x",0);l.attachY=(float)at.optDouble("y",0);l.attachAngle=(float)at.optDouble("angle",0);if(l.attachParent<0||l.attachParent>=i)l.attachParent=-1;}
     if(own){l.x=(float)object.optDouble("x",0);l.y=(float)object.optDouble("y",0);l.w=(float)object.optDouble("width",result.width);l.h=(float)object.optDouble("height",result.height);l.depth=(float)object.optDouble("depth",1);l.rotation=(float)object.optDouble("rotation",0);l.alpha=(float)object.optDouble("opacity",1);l.frames=frames(object.optJSONArray("frames"));}
     else {float[] origin=vector(object.opt("origin"),result.width/2f,result.height/2f),size=vector(object.opt("size"),l.bitmap.getWidth(),l.bitmap.getHeight()),scale=vector(object.opt("scale"),1,1),depth=vector(object.opt("parallaxDepth"),1,1),angle=vector(object.opt("angles"),0,0,0);l.w=size[0]*scale[0];l.h=size[1]*scale[Math.min(1,scale.length-1)];l.x=origin[0]-l.w/2;l.y=result.height-origin[1]-l.h/2;l.depth=depth[0];l.rotation=-(float)Math.toDegrees(angle[angle.length-1]);l.alpha=(float)object.optDouble("alpha",1);}

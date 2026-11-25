@@ -77,7 +77,7 @@ public final class SavedLibraryView extends LinearLayout {
     private void toast(String value){activity.runOnUiThread(()->{if(!activity.isFinishing())Toast.makeText(activity,value,Toast.LENGTH_LONG).show();});}
     public void refresh(){
         if(closed)return;ArrayList<JSONObject> next=new ArrayList<>();StringBuilder signature=new StringBuilder();long used=0;int failedMigrations=0;
-        signature.append(category);for(JSONObject record:app.jobs())if(record.optString("state").equals("saved")&&(category==0?record.optString("kind","video").equals("video"):!record.optString("kind","video").equals("video"))){
+        signature.append(category);for(JSONObject record:app.jobs())if(record.optString("state").equals("saved")&&!record.optBoolean("converting")&&(category==0?record.optString("kind","video").equals("video"):!record.optString("kind","video").equals("video"))){
             next.add(record);used+=record.optLong("size");if(!record.optString("migrationError").isEmpty())failedMigrations++;
             signature.append(record.optString("id")).append(record.optString("title")).append(record.optString("previewUrl")).append(record.optString("uri")).append(record.optString("migrationError"));
         }
@@ -106,7 +106,16 @@ public final class SavedLibraryView extends LinearLayout {
     }
     private void refreshTransfers(){
         int scroll=transfers.getScrollY();transferCards.removeAllViews();int count=0;List<JSONObject> jobs=app.jobs();Collections.reverse(jobs);
-        for(JSONObject job:jobs){if(job.optString("state").equals("saved"))continue;count++;String id=job.optString("id");boolean active=app.enqueued.contains(id);
+        for(JSONObject job:jobs){
+            // A saved scene being converted again stays up here until the new conversion is ready.
+            if(job.optString("state").equals("saved")&&job.optBoolean("converting")){count++;
+                LinearLayout card=new LinearLayout(activity);card.setOrientation(VERTICAL);card.setPadding(dp(14),dp(12),dp(14),dp(12));card.setBackground(Ui.card(activity));
+                TextView title=text(job.optString("title"),14,TEXT);title.setTypeface(null,Typeface.BOLD);title.setMaxLines(1);title.setEllipsize(TextUtils.TruncateAt.END);card.addView(title);
+                TextView detail=text("正在用新版转换器转换，完成后可设置",12,MUTED);detail.setPadding(0,dp(3),0,0);card.addView(detail);
+                ProgressBar progress=new ProgressBar(activity,null,android.R.attr.progressBarStyleHorizontal);progress.setIndeterminate(true);progress.setIndeterminateTintList(ColorStateList.valueOf(ACCENT));
+                LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(-1,dp(4));pp.topMargin=dp(8);card.addView(progress,pp);
+                LayoutParams cp=new LayoutParams(-1,-2);cp.bottomMargin=dp(8);transferCards.addView(card,cp);continue;}
+            if(job.optString("state").equals("saved"))continue;count++;String id=job.optString("id");boolean active=app.enqueued.contains(id);
             long total=job.optLong("total"),done=job.optLong("done");boolean failed=!job.optString("error").isEmpty();String state=job.optString("state");
             boolean stopping=active&&(state.equals("pausing")||state.equals("canceling"));
             LinearLayout card=new LinearLayout(activity);card.setGravity(Gravity.CENTER_VERTICAL);card.setPadding(dp(14),dp(12),dp(8),dp(12));card.setBackground(Ui.card(activity));

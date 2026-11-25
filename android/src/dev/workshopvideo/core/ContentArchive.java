@@ -33,7 +33,17 @@ public final class ContentArchive implements AutoCloseable {
     private long u64()throws IOException{long lo=Integer.toUnsignedLong(le()),hi=Integer.toUnsignedLong(le());if(hi>0x7fffffffL)throw new IOException("资源长度溢出");return lo+(hi<<32);}
     public static String path(String value)throws IOException {String name=value.replace('\\','/');if(name.isEmpty()||name.startsWith("/")||name.contains(":")||name.indexOf(0)>=0)throw new IOException("资源路径无效");for(String bit:name.split("/",-1))if(bit.isEmpty()||bit.equals("..")||bit.equals("."))throw new IOException("资源路径越界");return name;}
     public Set<String> names(){return Collections.unmodifiableSet(entries.keySet());}
-    public boolean has(String name){return entries.containsKey(name);}
+    /** Directory consulted for entries the archive lacks: Wallpaper Engine's own assets, downloaded with the user's licence. */
+    private File fallback;
+    public ContentArchive fallback(File root){fallback=root!=null&&root.isDirectory()?root:null;return this;}
+    public File fallbackRoot(){return fallback;}
+    /** True when the entry comes from the fallback directory rather than the package. */
+    public boolean fromFallback(String name){return !entries.containsKey(name)&&fallbackFile(name)!=null;}
+    private File fallbackFile(String name){
+        if(fallback==null)return null;try{path(name);}catch(IOException invalid){return null;}
+        File f=new File(fallback,name);return f.isFile()?f:null;
+    }
+    public boolean has(String name){return entries.containsKey(name)||fallbackFile(name)!=null;}
     private long compressedSize(Entry e)throws IOException{
         if(e.length<16)return -1;file.seek(e.offset);long lo=Integer.toUnsignedLong(le()),hi=Integer.toUnsignedLong(le());if(hi!=0)return -1;long expected=lo;if(expected<=e.length||expected>2L*1024*1024*1024)return -1;long written=0,end=e.offset+e.length;
         while(written<expected){if(file.getFilePointer()>end-8)return -1;int unc=le(),comp=le();if(unc<=0||comp<=0||unc>MAX_BLOCK||comp>MAX_BLOCK||file.getFilePointer()>end-comp)return -1;written+=unc;file.seek(file.getFilePointer()+comp);}
@@ -41,7 +51,8 @@ public final class ContentArchive implements AutoCloseable {
     }
     public synchronized byte[] read(String name,int limit)throws IOException {ByteArrayOutputStream out=new ByteArrayOutputStream();copy(name,out,limit);return out.toByteArray();}
     public synchronized long copy(String name,OutputStream out,long limit)throws IOException {
-        Entry e=entries.get(name);if(e==null)throw new FileNotFoundException(name);
+        Entry e=entries.get(name);
+        if(e==null){File f=fallbackFile(name);if(f==null)throw new FileNotFoundException(name);if(f.length()>limit)throw new IOException("资源超过允许大小");try(InputStream in=new FileInputStream(f)){return transfer(in,out,limit);}}
         if(zip!=null){ZipEntry z=zip.getEntry(name);if(z==null){for(Enumeration<? extends ZipEntry> all=zip.entries();all.hasMoreElements();){ZipEntry item=all.nextElement();if(!item.isDirectory()&&path(item.getName()).equals(name)){z=item;break;}}}if(z==null)throw new FileNotFoundException(name);try(InputStream in=zip.getInputStream(z)){return transfer(in,out,limit);}}
         long original=compressedSize(e);if(original>limit||original<0&&e.length>limit)throw new IOException("资源超过允许大小");
         file.seek(e.offset);if(original<0){long left=e.length;byte[] block=new byte[65536];while(left>0){if(Thread.currentThread().isInterrupted())throw new InterruptedIOException("解析已停止");int n=(int)Math.min(left,block.length);file.readFully(block,0,n);out.write(block,0,n);left-=n;}return e.length;}

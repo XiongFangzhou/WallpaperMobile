@@ -3,24 +3,39 @@ import android.graphics.*;import org.json.JSONObject;import dev.workshopvideo.co
 /** Shared scene transforms for posters, live surfaces and Android pixel regression checks. */
 final class ScenePainter {
  static void layers(Canvas c,WallpaperContent.Scene scene,Paint p,JSONObject options,EffectMotion.Frame frame,float pointerX,float pointerY,boolean down){layers(c,scene,p,options,frame,pointerX,pointerY,down,0);}
- static void layers(Canvas c,WallpaperContent.Scene scene,Paint p,JSONObject options,EffectMotion.Frame frame,float pointerX,float pointerY,boolean down,double seconds){int index=0;
-  scene.animate(seconds);
-  for(WallpaperContent.Layer l:scene.layers){int i=index++;if(!l.shown(options,scene.properties))continue;c.save();
+ static void layers(Canvas c,WallpaperContent.Scene scene,Paint p,JSONObject options,EffectMotion.Frame frame,float pointerX,float pointerY,boolean down,double seconds){
+  scene.applyUser(options);scene.animate(seconds);
+  // Replaced text bitmaps are left to the garbage collector: the canvas may still reference them.
+  scene.refreshTexts(new java.util.ArrayList<>());
+  for(int i=0;i<scene.layers.size();i++)if(scene.layers.get(i).group<0)paint(c,scene,p,options,frame,pointerX,pointerY,down,seconds,i);
+  p.setBlendMode(BlendMode.SRC_OVER);
+ }
+ /** One layer; a composition layer draws its children together, at its own opacity. */
+ private static void paint(Canvas c,WallpaperContent.Scene scene,Paint p,JSONObject options,EffectMotion.Frame frame,float pointerX,float pointerY,boolean down,double seconds,int i){
+  WallpaperContent.Layer l=scene.layers.get(i);if(!l.shown(options,scene.properties))return;
+  if(l.compose){int alpha=(int)(EffectMotion.clamp(l.opacity(options)*(float)options.optDouble("opacity"+i,1),0,1)*255);int saved=c.saveLayerAlpha(null,alpha);
+   for(int j=i+1;j<scene.layers.size();j++)if(scene.layers.get(j).group==i)paint(c,scene,p,options,frame,pointerX,pointerY,down,seconds,j);
+   c.restoreToCount(saved);return;}
+  c.save();
    float dx=(float)options.optDouble("layerX"+i,0)*scene.width,dy=(float)options.optDouble("layerY"+i,0)*scene.height;
    float depth=(float)options.optDouble("depth"+i,l.depth)*(float)options.optDouble("layerDepth",1);
    if(frame!=null){dx+=frame.x()*scene.width*.5f*depth;dy+=frame.y()*scene.height*.5f*depth;}
-   c.translate(dx,dy);c.rotate(l.rotation,l.x+l.w/2,l.y+l.h/2);p.setAlpha((int)(l.alpha*options.optDouble("opacity"+i,1)*255));
-   RectF target=new RectF(l.x,l.y,l.x+l.w,l.y+l.h);p.setBlendMode(l.additive?BlendMode.PLUS:blendMode(l.blend));
+   c.translate(dx,dy);c.rotate(l.rotation,l.x+l.w/2,l.y+l.h/2);p.setAlpha((int)(l.opacity(options)*options.optDouble("opacity"+i,1)*255));
+   RectF target=new RectF(l.x,l.y,l.x+l.w,l.y+l.h);ColorFilter savedFilter=p.getColorFilter();if(l.tint[0]!=1||l.tint[1]!=1||l.tint[2]!=1)p.setColorFilter(tinted(savedFilter,l.tint));p.setBlendMode(l.additive?BlendMode.PLUS:blendMode(l.blend));
    if(l.particles!=null&&l.bitmap!=null)particles(c,scene,l,p);
    else if(l.bitmap!=null&&l.meshPoints!=null)mesh(c,l,p,seconds);
-   else if(l.bitmap!=null){Rect source=null;if(!l.frames.isEmpty()){var r=l.region(seconds);int bw=l.bitmap.getWidth(),bh=l.bitmap.getHeight();source=new Rect(Math.round(r.u0()*bw),Math.round(r.v0()*bh),Math.max(1,Math.round(r.u1()*bw)),Math.max(1,Math.round(r.v1()*bh)));}c.drawBitmap(l.bitmap,source,target,p);}else{p.setColor(Color.WHITE);p.setTextSize(l.h);c.drawText(l.text,l.x,l.y+l.h,p);}
+   else if(l.bitmap!=null){Rect source=null;if(!l.frames.isEmpty()){var r=l.region(seconds);int bw=l.bitmap.getWidth(),bh=l.bitmap.getHeight();source=new Rect(Math.round(r.u0()*bw),Math.round(r.v0()*bh),Math.max(1,Math.round(r.u1()*bw)),Math.max(1,Math.round(r.v1()*bh)));}c.drawBitmap(l.bitmap,source,target,p);}
    // X-ray is exposed only for the explicitly supported simple two-image variant.
    if(l.reveal!=null&&options.optBoolean("xray",true)&&down){
     c.save();Path circle=new Path();float radius=l.w*(float)options.optDouble("xraySize",l.revealSize)*.5f;float[] local={pointerX,pointerY};Matrix transform=new Matrix();c.getMatrix(transform);if(transform.invert(transform)){transform.mapPoints(local);circle.addCircle(local[0],local[1],Math.max(1,radius),Path.Direction.CW);c.clipPath(circle);c.drawBitmap(l.reveal,null,target,p);}c.restore();
    }
-   c.restore();
-  }
-  p.setBlendMode(BlendMode.SRC_OVER);
+   p.setColorFilter(savedFilter);c.restore();
+ }
+ /** The paint's colour adjustment followed by the layer colour. */
+ static ColorFilter tinted(ColorFilter base,float[] tint){
+  ColorMatrix m=new ColorMatrix();if(base instanceof ColorMatrixColorFilter cm)cm.getColorMatrix(m);
+  ColorMatrix scale=new ColorMatrix();scale.setScale(tint[0],tint[1],tint[2],1);
+  ColorMatrix out=new ColorMatrix(m);out.preConcat(scale);return new ColorMatrixColorFilter(out);
  }
  /** Nearest Android blend mode for posters and the canvas fallback; the GL path applies WE's exact formulas. */
  static BlendMode blendMode(int mode){

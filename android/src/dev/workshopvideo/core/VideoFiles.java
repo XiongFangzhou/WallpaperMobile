@@ -6,6 +6,8 @@ import java.security.MessageDigest;
 
 /** Verified, recoverable storage transactions for private videos. */
 public final class VideoFiles {
+    /** InputStream.readAllBytes() only exists from Android 13; the app supports Android 10. */
+    public static byte[] readAll(java.io.InputStream in)throws java.io.IOException {java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream();byte[] buffer=new byte[65536];for(int n;(n=in.read(buffer))>0;)out.write(buffer,0,n);return out.toByteArray();}
     public static File path(File directory,String id) {
         if(!id.matches("[0-9a-f]{32}"))throw new IllegalArgumentException("视频 ID 无效。");
         return new File(directory,id+".video");

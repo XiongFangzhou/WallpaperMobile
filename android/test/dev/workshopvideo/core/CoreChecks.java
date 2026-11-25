@@ -73,6 +73,9 @@ public final class CoreChecks {
         PuppetChecks.run();
         ParticleChecks.run();
         PointerChecks.run();
+        FallbackChecks.run();
+        BudgetChecks.run();
+        PropertyChecks.run();
         DesktopBehaviorChecks.run();
         MotionPagingChecks.run();
         AdaptivePagingChecks.run();
