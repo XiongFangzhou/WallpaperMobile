@@ -36,10 +36,30 @@ final class WallpaperContent {
   boolean shown(JSONObject options,JSONObject properties){return visible&&Scene.conditions(when,options,properties);}
   /** Layer colour (multiplies the image) and the author property bound to it. */
   float[] tint={1,1,1};String tintProperty;
+  /** scenetexture author property whose chosen picture replaces the layer image; original keeps the converted image. */
+  String textureProperty;Bitmap original;
+  /** Mirroring and x/y rotation as a 2×2 matrix on the width/height vectors (SceneGeometry.pose); null when flat. */
+  float[] shape;
+  /** Video layer: the MP4 while converting (videoData); once loaded, the scene file and the range it plays from (video); bitmap is its first frame. */
+  byte[] videoData;File video;long videoOffset,videoLength;
+  boolean isVideo(){return video!=null||videoData!=null;}
   /** Composition layer: its children (group == its index) are drawn together and its effects apply to the result. */
   boolean compose;int group=-1;
   /** Fullscreen layer (a composition layer that starts from everything drawn below it, which its effects then replace). */
   boolean fullscreen;
+  /**
+   * Composition layer drawn as Wallpaper Engine does, inside its own rectangle: children render into a buffer of the
+   * layer's size (clipped to it) and its effects work in that space. Scenes converted before this drew groups over the
+   * whole screen.
+   */
+  boolean bounded;
+  /**
+   * Hidden by default but another layer's effect samples its result (_rt_imageLayerComposite_<id>_a): rendered only as
+   * that texture, never drawn to the screen while hidden.
+   */
+  boolean sourceOnly;
+  /** Rendered as an effect texture now: kept only for that, and every property condition holds. */
+  boolean source(JSONObject options,JSONObject properties){return sourceOnly&&Scene.conditions(when,options,properties);}
   /** Local transforms from this object up to the scene root {ox, oy, sx, sy, radians} and the author properties bound to origin, scale and angles of each. */
   float[][] chain;String[][] chainBind;
   /** Particle system drawn instead of the bitmap rectangle; transform is the emitter in scene space {x, y, sx, sy, radians; y up}. */
@@ -92,7 +112,13 @@ final class WallpaperContent {
     // Layers placed by scripts keep the scripts' position; setting-driven placement is for the others.
     if(l.chain!=null&&!l.scriptPlaced)place(l,options);
     if(l.tintProperty!=null){float[] c=UserValues.vector(user(l.tintProperty,options,properties),3);if(c!=null)l.tint=new float[]{c[0],c[1],c[2]};}
+    if(l.textureProperty!=null){Bitmap chosen=picture(user(l.textureProperty,options,properties));
+     if(chosen!=null&&l.bitmap!=chosen){if(l.original==null)l.original=l.bitmap;l.bitmap=chosen;}
+     else if(chosen==null&&l.original!=null){l.bitmap=l.original;l.original=null;}}
     for(SceneEffects.Effect e:l.effects){
+     for(Map.Entry<Integer,String> t:e.userTextures.entrySet()){int slot=t.getKey();Bitmap chosen=picture(user(t.getValue(),options,properties));
+      if(chosen!=null){if(!e.originals.containsKey(slot))e.originals.put(slot,e.textures.get(slot));e.textures.set(slot,chosen);}
+      else if(e.originals.containsKey(slot))e.textures.set(slot,e.originals.remove(slot));}
      if(e.when!=null)e.off=!conditions(e.when,options,properties);
      for(Map.Entry<String,String> b:e.bound.entrySet()){float[] old=e.uniforms.get(b.getKey());float[] v=UserValues.vector(user(b.getValue(),options,properties),old==null?0:old.length);if(v!=null&&(old==null||v.length==old.length))e.uniforms.put(b.getKey(),v);}
     }
@@ -103,9 +129,19 @@ final class WallpaperContent {
     }
    }
   }
+  /** Effect values and effect visibility computed by scripts (key fx.<effect id>.<pass>.<name> / fx.<effect id>.visible). */
+  void applyEffectValue(int objectId,String key,float[] value){
+   for(Layer l:layers){if(l.objectId!=objectId)continue;
+    for(SceneEffects.Effect e:l.effects){
+     if(key.equals(e.scriptedVisible))e.scriptOff=value[0]<.5f;
+     String uniform=e.scripted.get(key);if(uniform==null)continue;float[] old=e.uniforms.get(uniform);
+     if(old==null||old.length==value.length)e.uniforms.put(uniform,value.clone());
+     else{float[] fit=old.clone();for(int i=0;i<fit.length;i++)fit[i]=value[Math.min(i,value.length-1)];e.uniforms.put(uniform,fit);}
+    }}
+  }
   /** Script-side changes to a text layer (ITextLayer text, pointsize, color). */
   void applyText(int objectId,String value,float pointsize,float[] color){
-   for(Layer l:layers){if(l.objectId!=objectId||l.text==null)continue;if(value!=null)l.text.value=value;if(Float.isFinite(pointsize)&&pointsize>0)l.text.pointsize=pointsize;if(color!=null&&color.length>=3){boolean changed=l.text.scriptColor!=null&&!Arrays.equals(l.text.scriptColor,color);l.text.scriptColor=color.clone();if(changed&&!l.text.opaque)l.tint=new float[]{color[0],color[1],color[2]};}}
+   for(Layer l:layers){if(l.objectId!=objectId||l.text==null)continue;if(value!=null)l.text.value=value;if(Float.isFinite(pointsize)&&pointsize>0)l.text.pointsize=pointsize;if(color!=null&&color.length>=3&&!l.text.opaque)l.tint=new float[]{color[0],color[1],color[2]};}
   }
   /**
    * Redraws text layers whose text or size changed. The box follows the text, keeping its aligned edge in place;
@@ -149,7 +185,7 @@ final class WallpaperContent {
   JSONObject properties=new JSONObject();
   /** Finger in scene coordinates (y up) for emitters that follow the pointer; set by the renderer each frame. */
   volatile float cursorX,cursorY;volatile boolean cursorDown;
-  boolean animated(){if(scripts!=null)return true;for(Layer l:layers)if(l.frames.size()>1||!l.effects.isEmpty()||l.moving()||l.particles!=null)return true;return false;}
+  boolean animated(){if(scripts!=null)return true;for(Layer l:layers)if(l.frames.size()>1||!l.effects.isEmpty()||l.moving()||l.particles!=null||l.isVideo())return true;return false;}
   /** Applies a script frame for one source object: origin, scale, angles (x,y,z each), alpha, visible, playing — in WE scene space. */
   /** 2D camera from scripts (scene units from the canvas centre, y up; zoom relative) and the scene's camera shake. */
   /** Scene bloom (SceneBloom) and the author properties its fields follow; scripts may change it too. */
@@ -210,8 +246,61 @@ final class WallpaperContent {
     double cx=parent.x+parent.w/2+lx*pc-ly*ps,cy=height-(parent.y+parent.h/2)+lx*ps+ly*pc;
     child.x=(float)(cx-child.w/2);child.y=(float)(height-cy-child.h/2);child.rotation=-(float)Math.toDegrees(child.attachAngle+point.angle()+pa);
    }
-  }public void close(){for(Layer l:layers){for(SceneEffects.Effect e:l.effects)e.recycle();if(l.bitmap!=null&&!l.bitmap.isRecycled())l.bitmap.recycle();if(l.reveal!=null&&!l.reveal.isRecycled())l.reveal.recycle();}}}
+  }
+  /** Pictures chosen for scenetexture settings, by file. */
+  private final Map<String,Bitmap> pictures=new HashMap<>();
+  /** The picture a scenetexture setting holds: a private copy made by UserPictures (…/user-textures/<sha1>.png); else null. */
+  Bitmap picture(Object value){
+   if(!(value instanceof String path)||path.isEmpty())return null;
+   Bitmap cached=pictures.get(path);if(cached!=null&&!cached.isRecycled())return cached;
+   File f=new File(path);File parent=f.getParentFile();
+   if(parent==null||!parent.getName().equals("user-textures")||!f.getName().matches("[0-9a-f]{40}\\.png")||!f.isFile()||f.length()>64L*1024*1024)return null;
+   try{Bitmap b=bitmap(java.nio.file.Files.readAllBytes(f.toPath()));pictures.put(path,b);return b;}catch(Exception|OutOfMemoryError unreadable){return null;}
+  }
+  public void close(){
+   // Converted images come back first so each bitmap is recycled once; chosen pictures are recycled with the cache.
+   for(Layer l:layers){if(l.original!=null){l.bitmap=l.original;l.original=null;}for(SceneEffects.Effect e:l.effects){for(Map.Entry<Integer,Object> o:e.originals.entrySet())e.textures.set(o.getKey(),o.getValue());e.originals.clear();}}
+   for(Bitmap b:pictures.values())if(!b.isRecycled())b.recycle();pictures.clear();
+   for(Layer l:layers){for(SceneEffects.Effect e:l.effects)e.recycle();if(l.bitmap!=null&&!l.bitmap.isRecycled())l.bitmap.recycle();if(l.reveal!=null&&!l.reveal.isRecycled())l.reveal.recycle();}}}
  static float[] vector(Object value,float...fallback){try{if(value instanceof JSONObject)value=((JSONObject)value).opt("value");if(value instanceof JSONArray){JSONArray a=(JSONArray)value;float[] f=new float[a.length()];for(int i=0;i<f.length;i++)f[i]=(float)a.getDouble(i);return f;}String[] s=String.valueOf(value).trim().split("[ ,]+");float[] f=new float[s.length];for(int i=0;i<s.length;i++)f[i]=Float.parseFloat(s[i]);return f;}catch(Exception e){return fallback;}}
+ /** Largest layer video kept in a converted scene. */
+ static final int VIDEO_LIMIT=64*1024*1024;
+ /**
+  * Layer videos are stored uncompressed in the converted scene and played in place. The scene records the entry's local
+  * header offset; this reads that header back and returns {data offset, length} only when it is a stored entry of that
+  * name whose data is an MP4 inside the file.
+  */
+ static long[] storedRange(File zip,long header,String name)throws IOException {
+  byte[] want=name.getBytes(StandardCharsets.UTF_8);
+  try(RandomAccessFile f=new RandomAccessFile(zip,"r")){
+   if(header<0||header>f.length()-30)throw new IOException("图层视频位置无效");
+   byte[] h=new byte[30];f.seek(header);f.readFully(h);ByteBuffer b=ByteBuffer.wrap(h).order(ByteOrder.LITTLE_ENDIAN);
+   if(b.getInt(0)!=0x04034b50||b.getShort(8)!=0||(b.getShort(6)&8)!=0)throw new IOException("图层视频不是未压缩条目");
+   long size=Integer.toUnsignedLong(b.getInt(22));int n=b.getShort(26)&0xffff,m=b.getShort(28)&0xffff;
+   if(size!=Integer.toUnsignedLong(b.getInt(18))||size<16||size>VIDEO_LIMIT||n!=want.length)throw new IOException("图层视频条目大小无效");
+   byte[] got=new byte[n];f.readFully(got);if(!Arrays.equals(got,want))throw new IOException("图层视频条目名称不符");
+   long data=header+30+n+m;if(data>f.length()-size)throw new IOException("图层视频条目越界");
+   byte[] head=new byte[8];f.seek(data);f.readFully(head);if(head[4]!='f'||head[5]!='t'||head[6]!='y'||head[7]!='p')throw new IOException("图层视频不是 MP4");
+   return new long[]{data,size};
+  }
+ }
+ /**
+  * A scene repackaged after conversion (imported again, normalized) no longer holds its videos where the scene says, or
+  * compresses them: the MP4 is then copied once into the app cache (java.io.tmpdir), named by the scene file's path, size
+  * and date and the entry, and played from there. Copies unused for a week are removed.
+  */
+ static File videoCopy(ContentArchive a,String entry,File scene)throws Exception {
+  File dir=new File(System.getProperty("java.io.tmpdir"),"scene-video");if(!dir.isDirectory()&&!dir.mkdirs())throw new IOException("无法创建视频缓存目录");
+  byte[] digest=java.security.MessageDigest.getInstance("SHA-1").digest((scene.getAbsolutePath()+"|"+scene.length()+"|"+scene.lastModified()+"|"+entry).getBytes(StandardCharsets.UTF_8));
+  StringBuilder name=new StringBuilder();for(byte b:digest)name.append(String.format(Locale.ROOT,"%02x",b));File out=new File(dir,name+".mp4");
+  long now=System.currentTimeMillis();File[] old=dir.listFiles();if(old!=null)for(File f:old)if(!f.equals(out)&&now-f.lastModified()>7L*24*3600*1000)f.delete();
+  if(out.isFile()&&out.length()>=16){out.setLastModified(now);return out;}
+  File part=new File(dir,name+".part");
+  try(OutputStream o=new BufferedOutputStream(new FileOutputStream(part))){a.copy(entry,o,VIDEO_LIMIT);}
+  byte[] head=new byte[8];try(InputStream in=new FileInputStream(part)){if(in.read(head)!=8)head[4]=0;}
+  if(part.length()<16||head[4]!='f'||head[5]!='t'||head[6]!='y'||head[7]!='p'||!part.renameTo(out)){part.delete();throw new IOException("图层视频无法读取");}
+  return out;
+ }
  static Scene scene(File file)throws Exception {
   Scene result=new Scene();try(ContentArchive a=new ContentArchive(file)){
    boolean own=a.has("wallpaper-mobile.json");String entry=own?"wallpaper-mobile.json":"scene.json";
@@ -244,6 +333,13 @@ final class WallpaperContent {
      JSONArray fx=new JSONArray(new String(a.read(asset(a,object.getString("effectsFile")),4*1024*1024),StandardCharsets.UTF_8));if(fx.length()>24)throw new IOException("图层特效过多");
      long[] budget={pixels};for(int e=0;e<fx.length();e++)l.effects.add(SceneEffects.parse(fx.getJSONObject(e),a,budget,SceneBudget.current().pixels()));pixels=budget[0];
     }
+    // An unreadable video leaves its first frame showing; conversion checks that every saved video loads.
+    if(own&&object.has("videoFile")){String videoEntry=ContentArchive.path(object.getString("videoFile"));
+     try{long[] range=storedRange(file,object.optLong("videoHeader",-1),videoEntry);l.video=file;l.videoOffset=range[0];l.videoLength=range[1];}
+     catch(IOException moved){
+      try{File copy=videoCopy(a,videoEntry,file);l.video=copy;l.videoOffset=0;l.videoLength=copy.length();}
+      catch(InterruptedIOException stop){throw stop;}catch(Exception unreadable){android.util.Log.w("WallpaperContent","layer video not loaded: "+unreadable.getMessage());}
+     }}
     if(own&&object.has("particlesFile")){
      JSONObject data=new JSONObject(new String(a.read(asset(a,object.getString("particlesFile")),8*1024*1024),StandardCharsets.UTF_8));
      float[][] frames=null;JSONArray list2=data.optJSONArray("frames");if(list2!=null&&list2.length()>0){frames=new float[Math.min(1024,list2.length())][];for(int f=0;f<frames.length;f++){JSONArray q=list2.getJSONArray(f);frames[f]=new float[]{(float)q.optDouble(0),(float)q.optDouble(1),(float)q.optDouble(2),(float)q.optDouble(3)};}}
@@ -258,8 +354,9 @@ final class WallpaperContent {
      if(tracks!=null)for(int t=0;t<tracks.length()&&t<8;t++){JSONArray tr=tracks.getJSONArray(t);int id=tr.getInt(0);if(!l.puppet.animations.containsKey(id))continue;clips.add(new PuppetModel.Track(id,(float)EffectMotion.clamp((float)tr.optDouble(1,1),0,10),(float)EffectMotion.clamp((float)tr.optDouble(2,1),0,1),tr.optBoolean(3,true)));}
      l.tracks=List.copyOf(clips);
     }
-    if(own){l.compose=object.optBoolean("compose");l.fullscreen=l.compose&&object.optBoolean("fullscreen");int g=object.optInt("group",-1);l.group=g>=0&&g<i?g:-1;}
-    if(own){l.when=object.optJSONArray("when");l.tintProperty=object.has("tintProperty")?object.optString("tintProperty"):null;
+    if(own){l.compose=object.optBoolean("compose");l.fullscreen=l.compose&&object.optBoolean("fullscreen");l.bounded=l.compose&&!l.fullscreen&&object.optBoolean("bounded");l.sourceOnly=object.optBoolean("source");int g=object.optInt("group",-1);l.group=g>=0&&g<i?g:-1;}
+    if(own){l.when=object.optJSONArray("when");l.tintProperty=object.has("tintProperty")?object.optString("tintProperty"):null;l.textureProperty=object.has("textureProperty")?object.optString("textureProperty"):null;
+     JSONArray shape=object.optJSONArray("shape");if(shape!=null&&shape.length()==4){l.shape=new float[4];for(int k=0;k<4;k++)l.shape[k]=(float)shape.optDouble(k,k==0||k==3?1:0);}
      JSONArray tint=object.optJSONArray("tint");if(tint!=null&&tint.length()>=3)l.tint=new float[]{(float)tint.optDouble(0,1),(float)tint.optDouble(1,1),(float)tint.optDouble(2,1)};
      JSONArray chain=object.optJSONArray("chain");
      if(chain!=null&&chain.length()>0&&chain.length()<=32){l.chain=new float[chain.length()][];l.chainBind=new String[chain.length()][];

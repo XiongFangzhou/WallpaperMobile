@@ -10,6 +10,8 @@ public final class TexturePixels {
  /** Sprite-sheet image; call only after {@link #frames} accepted the frame table, so animation is never frozen silently. */
  public static Image readSprite(byte[] src,int edge)throws IOException {return read(src,edge,true);}
  public static boolean sprite(byte[] src){return src.length>40&&flags(src)>=0&&(flags(src)&4)!=0;}
+ /** ClampUVs (TEX flag 2): sampled outside 0..1 it repeats its edge, not the whole image (masks, pointer sprites). */
+ public static boolean clampUVs(byte[] src){return src.length>40&&flags(src)>=0&&(flags(src)&2)!=0;}
  public static boolean video(byte[] src){return src.length>40&&flags(src)>=0&&(flags(src)&32)!=0;}
  private static int flags(byte[] src){try{ByteBuffer b=ByteBuffer.wrap(src).order(ByteOrder.LITTLE_ENDIAN);if(!string(b).equals("TEXV0005")||!string(b).equals("TEXI0001"))return -1;b.getInt();return b.getInt();}catch(Exception e){return -1;}}
  /** The MP4 stored in a video texture (TEXB0004 with the video flag): the first mip's payload, unmodified. */

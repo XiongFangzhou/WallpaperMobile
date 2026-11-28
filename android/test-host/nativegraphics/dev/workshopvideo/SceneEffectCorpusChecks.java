@@ -74,6 +74,7 @@ public class SceneEffectCorpusChecks {
         }
     }
     /** 3462491575: a foreground hidden through its parent's author switch stays hidden, and the switch can show it. */
+    static byte[] readEntry(File zip,String name)throws Exception{try(java.util.zip.ZipFile z=new java.util.zip.ZipFile(zip)){return z.getInputStream(z.getEntry(name)).readAllBytes();}}
     @Test public void authorSwitchesControlLayers()throws Exception{
         String workshop=System.getenv("WVB_WORKSHOP_DIR");File root=root();
         Assume.assumeTrue(workshop!=null&&!workshop.isBlank()&&root!=null&&nodeAvailable()&&new File(workshop,"3462491575/project.json").isFile());
@@ -81,7 +82,14 @@ public class SceneEffectCorpusChecks {
         SceneAdapter.Report report=SceneAdapter.inspect(asDownloaded(new File(workshop,"3462491575"),workspace),workspace);
         assertFalse("no layer is dropped for the budget: "+report.skipped,report.skipped.keySet().stream().anyMatch(k->k.contains("预算")));
         assertTrue(report.properties.has("brcameraforeground"));assertTrue("camera zoom and mouse-parallax influence are offered as sliders",report.properties.has("newproperty30")&&report.properties.has("brmouseparallaximpactvalue"));
+        assertEquals("the light shafts shape object is kept",1,report.shapeLayers);
         File adapted=new File(workspace,"3462491575-switches.zip");SceneAdapter.write(report,adapted,new NodeTranslator(root));report.scene.close();
+        JSONObject offered=new JSONObject(new String(readEntry(adapted,"wallpaper-mobile.json"),java.nio.charset.StandardCharsets.UTF_8)).getJSONObject("properties");
+        assertTrue("light shafts switch drives the shape layer",offered.getJSONObject("color").getBoolean("effective"));
+        assertTrue("camera position sliders drive the scripted camera",offered.getJSONObject("x3").getBoolean("effective"));
+        assertTrue("text position sliders on the parent group count",offered.getJSONObject("x7").getBoolean("effective"));
+        assertTrue("settings the scene never uses are not phone limitations",offered.getJSONObject("hrb").optBoolean("unused")&&offered.getJSONObject("hrb").getBoolean("effective"));
+        assertFalse("audio settings stay marked",offered.getJSONObject("newproperty45").getBoolean("effective"));
         try(WallpaperContent.Scene scene=WallpaperContent.scene(adapted)){
             WallpaperContent.Layer front=null;for(WallpaperContent.Layer l:scene.layers)if(l.name.equals("m3 前")&&l.when!=null&&l.when.toString().contains("\"0\""))front=l;
             assertNotNull(front);JSONObject options=new JSONObject();
@@ -124,6 +132,69 @@ public class SceneEffectCorpusChecks {
         adapted=new File(workspace,"3213046325-bloom.zip");SceneAdapter.write(report,adapted,new NodeTranslator(root));report.scene.close();
         try(WallpaperContent.Scene scene=WallpaperContent.scene(adapted)){
             assertTrue(scene.bloom);assertNull(scene.bloomOnProperty);assertEquals(.31373f,scene.bloomTint[1],1e-4);assertEquals(1f,scene.bloomTint[2],1e-4);
+        }
+    }
+    /** Official instanced layers (solidlayer_instance): instance.textures replace the white base, usertextures bind scenetexture settings. */
+    @Test public void instanceTexturesAndPictureSettings()throws Exception{
+        String workshop=System.getenv("WVB_WORKSHOP_DIR");File root=root();
+        Assume.assumeTrue(workshop!=null&&!workshop.isBlank()&&root!=null&&nodeAvailable()&&new File(workshop,"3601075812/project.json").isFile());
+        File workspace=new File(System.getProperty("graphics.work"),"effect-corpus");workspace.mkdirs();
+        SceneAdapter.Report report=SceneAdapter.inspect(asDownloaded(new File(workshop,"3601075812"),workspace),workspace);
+        File adapted=new File(workspace,"3601075812-textures.zip");SceneAdapter.write(report,adapted,new NodeTranslator(root));report.scene.close();
+        for(java.util.Map.Entry<String,String> dropped:report.droppedEffects.entrySet())assertFalse("effects sampling other layers are kept: "+dropped,dropped.getValue().contains("imageLayerComposite")||dropped.getValue().contains("合成的特效步骤"));
+        JSONObject offered=new JSONObject(new String(readEntry(adapted,"wallpaper-mobile.json"),java.nio.charset.StandardCharsets.UTF_8)).getJSONObject("properties");
+        assertTrue("the custom background picture setting drives a layer",offered.getJSONObject("texturecustom").getBoolean("effective"));
+        try(WallpaperContent.Scene scene=WallpaperContent.scene(adapted)){
+            WallpaperContent.Layer dock=null,custom=null;for(WallpaperContent.Layer l:scene.layers){if(l.name.equals("Launcher 1"))dock=l;if("texturecustom".equals(l.textureProperty))custom=l;}
+            assertNotNull(dock);int center=dock.bitmap.getPixel(dock.bitmap.getWidth()/2,dock.bitmap.getHeight()/2),corner=dock.bitmap.getPixel(1,1);
+            assertFalse("dock icons show their default icon texture, not a white square",center==0xffffffff&&corner==0xffffffff);
+            assertNotNull(custom);android.graphics.Bitmap before=custom.bitmap;
+            File pictures=new File(workspace,"user-textures");pictures.mkdirs();File picture=new File(pictures,"0123456789abcdef0123456789abcdef01234567.png");
+            android.graphics.Bitmap red=android.graphics.Bitmap.createBitmap(8,8,android.graphics.Bitmap.Config.ARGB_8888);red.eraseColor(0xffff0000);
+            try(FileOutputStream out=new FileOutputStream(picture)){red.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out);}
+            scene.applyUser(new JSONObject().put("user.texturecustom",picture.getAbsolutePath()));
+            assertNotSame("a chosen picture replaces the layer image",before,custom.bitmap);assertEquals(0xffff0000,custom.bitmap.getPixel(4,4));
+            scene.applyUser(new JSONObject().put("user.texturecustom",""));assertSame("clearing the setting restores the author's image",before,custom.bitmap);
+            scene.applyUser(new JSONObject().put("user.texturecustom",new File(workspace,"elsewhere/"+picture.getName()).getAbsolutePath()));assertSame("paths outside the private picture folder are ignored",before,custom.bitmap);
+            // The birds are a video texture: kept as a video layer that plays from the scene file in place.
+            WallpaperContent.Layer birds=null;for(WallpaperContent.Layer l:scene.layers)if(l.name.equals("Birds V_2"))birds=l;
+            assertNotNull("the video texture layer is kept",birds);assertEquals("the video plays from the scene file itself",adapted,birds.video);
+            byte[] head=new byte[8];try(java.io.RandomAccessFile f=new java.io.RandomAccessFile(adapted,"r")){f.seek(birds.videoOffset);f.readFully(head);}
+            assertEquals("the recorded range starts at the MP4","ftyp",new String(head,4,4,java.nio.charset.StandardCharsets.US_ASCII));assertTrue(birds.videoLength>1000);
+            // The calendar's clipping mask samples composition layer 1260; hidden layers used only as such textures (436, 719)
+            // are kept as sources and never drawn on their own.
+            WallpaperContent.Layer mask=null,texture=null,spotify=null,cover=null;
+            for(WallpaperContent.Layer l:scene.layers){for(SceneEffects.Effect e:l.effects)if(e.bind.containsValue("_rt_imageLayerComposite_1260_a"))mask=l;if(l.objectId==1260)texture=l;if(l.objectId==436)spotify=l;if(l.objectId==719)cover=l;}
+            assertNotNull("the clipping mask keeps the composite it samples",mask);assertNotNull(texture);assertTrue("a sized composition layer renders inside its rectangle",texture.compose&&texture.bounded&&!texture.sourceOnly);
+            assertNotNull("a hidden layer sampled by an effect is kept",spotify);assertNotNull(cover);
+            assertTrue("sampled hidden layers are sources only",spotify.sourceOnly&&cover.sourceOnly&&!spotify.shown(new JSONObject(),scene.properties)&&!cover.shown(new JSONObject(),scene.properties));
+        }
+        // Normalizing (a converted scene imported again) recompresses every entry: the video then plays from a cached copy.
+        File repacked=new File(workspace,"3601075812-repacked.zip");WallpaperPackage.normalize(adapted,repacked,workspace);
+        try(WallpaperContent.Scene scene=WallpaperContent.scene(repacked)){
+            WallpaperContent.Layer birds=null;for(WallpaperContent.Layer l:scene.layers)if(l.name.equals("Birds V_2"))birds=l;
+            assertNotNull(birds);assertNotNull("a repackaged scene still finds its video",birds.video);assertNotEquals(repacked,birds.video);
+            assertEquals(0,birds.videoOffset);assertEquals(birds.video.length(),birds.videoLength);
+        }
+    }
+    /** X-ray variants beyond the built-in reveal (an opacity mask and another layer's result; a flashlight sprite) run from their own shader. */
+    @Test public void xrayVariantsRunFromTheirShader()throws Exception{
+        String workshop=System.getenv("WVB_WORKSHOP_DIR");File root=root();
+        Assume.assumeTrue(workshop!=null&&!workshop.isBlank()&&root!=null&&nodeAvailable()&&new File(workshop,"2262867800/project.json").isFile()&&new File(workshop,"3213046325/project.json").isFile());
+        File workspace=new File(System.getProperty("graphics.work"),"effect-corpus");workspace.mkdirs();
+        for(String id:new String[]{"2262867800","3213046325"}){
+            SceneAdapter.Report report=SceneAdapter.inspect(asDownloaded(new File(workshop,id),workspace),workspace);
+            File adapted=new File(workspace,id+"-xray.zip");SceneAdapter.write(report,adapted,new NodeTranslator(root));report.scene.close();
+            assertFalse(id+": X-ray is kept: "+report.droppedEffects,report.droppedEffects.containsKey("xray"));
+            try(WallpaperContent.Scene scene=WallpaperContent.scene(adapted)){
+                SceneEffects.Effect xray=null;for(WallpaperContent.Layer l:scene.layers)for(SceneEffects.Effect e:l.effects)if(e.name.equals("xray"))xray=e;
+                assertNotNull(id+": the X-ray runs as an author effect",xray);assertTrue(id+": it follows the finger only",xray.finger);assertTrue(id+": its pointer sprite clamps at its edges (TEX ClampUVs)",xray.clamped.contains(2));
+                if(id.equals("2262867800")){
+                    assertTrue("it samples the hidden X-Ray layer's result",xray.bind.containsValue("_rt_imageLayerComposite_221_a"));
+                    WallpaperContent.Layer source=null;for(WallpaperContent.Layer l:scene.layers)if(l.objectId==221)source=l;
+                    assertNotNull("the hidden layer it samples is kept",source);assertTrue(source.sourceOnly&&!source.shown(new JSONObject(),scene.properties)&&!source.effects.isEmpty());
+                }
+            }
         }
     }
     /** Diagnostic only: WVB_STILL_PROBE=id[,id] renders one frame of each converted scene (default settings) for comparison with its preview. */

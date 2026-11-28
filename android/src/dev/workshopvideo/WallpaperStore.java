@@ -36,6 +36,43 @@ final class WallpaperStore {
             cleanup(c);return config;
         }catch(Exception problem){target.delete();throw problem;}
     }
+    /**
+     * Author settings (user.* options) changed while editing the work that is already the live wallpaper: written
+     * straight into its active configurations so the running wallpaper follows them without applying again.
+     */
+    static synchronized boolean updateAuthorSettings(Context c,File source,JSONObject options){
+        if(source==null||options==null)return false;String path=source.getAbsolutePath()+":";
+        SharedPreferences.Editor save=prefs(c).edit();boolean any=false;
+        for(String key:new String[]{"active",WallpaperScopes.activeKey(1),WallpaperScopes.activeKey(2)}){
+            JSONObject config=read(c,key);if(!config.optString("sourceKey").startsWith(path))continue;
+            JSONObject effects=config.optJSONObject("effects");if(effects==null)continue;boolean changed=false;
+            try{
+                for(java.util.Iterator<String> k=options.keys();k.hasNext();){String n=k.next();if(!n.startsWith("user."))continue;Object v=options.opt(n);if(!String.valueOf(v).equals(String.valueOf(effects.opt(n)))){effects.put(n,v);changed=true;}}
+                if(changed){config.put("effects",effects);save.putString(key,config.toString());any=true;}
+            }catch(JSONException ignored){}
+        }
+        if(any)save.apply();return any;
+    }
+    /**
+     * A saved work was converted again: active wallpapers made from its previous file get a copy of the new one,
+     * keeping their settings, so the live wallpaper matches the preview. Returns whether anything was replaced.
+     */
+    static synchronized boolean replaceSource(Context c,String oldKey,File source){
+        if(oldKey==null||oldKey.isEmpty())return false;
+        java.util.List<String> keys=new java.util.ArrayList<>();
+        for(String key:new String[]{"active",WallpaperScopes.activeKey(1),WallpaperScopes.activeKey(2)})if(sameSource(read(c,key).optString("sourceKey"),source))keys.add(key);
+        if(keys.isEmpty())return false;
+        File target=null;
+        try{
+            target=WallpaperFiles.copy(directory(c),source);String newKey=sourceKey(source);
+            SharedPreferences.Editor save=prefs(c).edit();
+            for(String key:keys){JSONObject config=read(c,key);config.put("file",target.getName());config.put("sourceKey",newKey);save.putString(key,config.toString());}
+            if(!save.commit())throw new IOException("无法保存壁纸配置。");
+            return true;
+        }catch(Exception failed){if(target!=null)target.delete();return false;}
+    }
+    /** The wallpaper was made from this saved file (any earlier conversion of it): sourceKey is path:length:modified. */
+    static boolean sameSource(String key,File source){String path=source.getAbsolutePath()+":";return key!=null&&key.startsWith(path)&&!key.equals(sourceKey(source));}
     static synchronized void activate(Context c,JSONObject config) throws Exception {
         if(!available(c,config))throw new IOException("壁纸视频不存在。");
         int installed=installedMask(c),targets=WallpaperScopes.confirmedTargets(config.optInt("which",3),installed);

@@ -17,6 +17,10 @@ public final class CoreChecks {
         q.text="orbital home";q.exact=true;q.excluded.add("Portrait");
         var request=q.request();
         check(request.getAppid()==431960 && request.getCreatorAppid()==431960,"app scope");
+        check(WorkshopQuery.itemId("https://steamcommunity.com/sharedfiles/filedetails/?id=3462491575&searchtext=")==3462491575L,"pasted workshop link");
+        check(WorkshopQuery.itemId("https://steamcommunity.com/sharedfiles/filedetails/?l=schinese&id=3601075812")==3601075812L,"link with other parameters first");
+        check(WorkshopQuery.itemId(" 3462491575 ")==3462491575L,"bare workshop id");
+        check(WorkshopQuery.itemId("Arknights 2025")==-1&&WorkshopQuery.itemId("12345")==-1&&WorkshopQuery.itemId("")==-1,"ordinary text stays a search");
         check(request.getSearchText().equals("\"orbital home\""),"WE exact match");
         check(request.getDays()==365&&request.getQueryType()==3,"WE trend_year default");
         check(request.getRequiredtagsCount()==0,"no forced wallpaper or video tags");

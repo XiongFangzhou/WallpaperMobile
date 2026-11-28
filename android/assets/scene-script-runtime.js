@@ -115,6 +115,7 @@ const input = { cursorWorldPosition: new Vec3(0, 0, 0), cursorScreenPosition: ne
 
 // ---- Scene objects ----
 const layers = [];
+let createdId = 0;
 /** Saved configuration of each object (getInitialLayerConfig). */
 const initial = new Map();
 /** Camera set by setCameraTransforms, else the camera object's scripted origin; {x, y, zoom}. */
@@ -145,7 +146,7 @@ class Layer {
     this.pointsize = d.pointsize === undefined ? 32 : d.pointsize; this.font = d.font || ''; this.padding = d.padding || 0;
     this.horizontalalign = d.horizontalalign || 'center'; this.verticalalign = d.verticalalign || 'center'; this.anchor = d.anchor || 'none';
     this.opaquebackground = false; this.backgroundcolor = new Vec3(0, 0, 0); this.limitrows = false; this.maxrows = d.maxrows || 1; this.limitwidth = false; this.maxwidth = d.maxwidth || 500;
-    this.attachment = d.attachment || ''; this.parallaxDepth = new Vec2(1, 1); this.alignment = 'center'; this.zoom = d.zoom === undefined ? 1 : d.zoom; this.fov = d.fov === undefined ? 50 : d.fov;
+    this.attachment = d.attachment || ''; this.bound = d.bound || {}; this._fx = {}; this.parallaxDepth = new Vec2(1, 1); this.alignment = 'center'; this.zoom = d.zoom === undefined ? 1 : d.zoom; this.fov = d.fov === undefined ? 50 : d.fov;
     this.playing = d.particle ? true : undefined; this.kind = d.kind || 'image';
     this._animation = controller(); this._texture = controller(); this._video = controller();
   }
@@ -200,7 +201,21 @@ const thisScene = {
   getLayerIndex(layer) { return layers.indexOf(typeof layer === 'string' ? byName.get(layer) : layer); },
   getLayerCount() { return layers.length; },
   enumerateLayers() { return layers.slice(); },
-  sortLayer() {}, createLayer() { return null; }, destroyLayer() {},
+  sortLayer() {},
+  /** IScene.createLayer: a layer scripts can use (properties, parents, sorting, destroyLayer). Layers created at run time are
+   *  not drawn on the phone yet; negative ids keep them out of what is reported. */
+  createLayer(config) {
+    const c = typeof config === 'object' && config !== null ? config : {};
+    const d = { id: --createdId, name: c.name || '', origin: c.origin ? [c.origin.x, c.origin.y, c.origin.z || 0] : [0, 0, 0], scale: c.scale ? [c.scale.x, c.scale.y, c.scale.z || 1] : [1, 1, 1],
+      angles: c.angles ? [c.angles.x, c.angles.y, c.angles.z || 0] : [0, 0, 0], alpha: c.alpha === undefined ? 1 : +c.alpha, visible: c.visible !== false,
+      kind: c.text !== undefined ? 'text' : c.particle !== undefined ? 'particle' : 'image', text: c.text, pointsize: c.pointsize, font: c.font };
+    const l = new Layer(d); if (c.color !== undefined) l.color = new Vec3(c.color); layers.push(l); byId.set(l.id, l); if (l.name && !byName.has(l.name)) byName.set(l.name, l);
+    return l;
+  },
+  destroyLayer(layer) {
+    const l = typeof layer === 'object' && layer !== null ? layer : this.getLayer(layer); if (!l || l.id >= 0) return false;
+    layers.splice(layers.indexOf(l), 1); byId.delete(l.id); if (byName.get(l.name) === l) byName.delete(l.name); return true;
+  },
   getLayerByID(id) { return byId.get(+id) || null; },
   getInitialLayerConfig(key) { const l = typeof key === 'object' && key ? key : this.getLayer(key); return l && initial.get(l.id) ? JSON.parse(JSON.stringify(initial.get(l.id))) : null; },
   /** 2D camera (CameraTransforms): eye/center are offsets from the canvas centre in scene units; zoom is relative. */
@@ -236,6 +251,20 @@ const scripts = [];
 let started = false;
 const errors = [];
 
+/** A saved effect value: numbers stay numbers, "x y" / "x y z" become vectors, visibility is a boolean. */
+function fxValue(value, visible) {
+  if (visible) return value === undefined ? true : !!(value === true || value === 'true' || value === 1 || value === '1');
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  if (typeof value === 'string') { const p = value.trim().split(/[\s,]+/).map(Number); return p.length >= 3 ? new Vec3(p) : p.length === 2 ? new Vec2(p[0], p[1]) : p[0] || 0; }
+  return value === undefined || value === null ? 0 : value;
+}
+function current(layer, property) { return property.startsWith('fx.') ? layer._fx[property] : layer[property]; }
+function fxArray(v) {
+  if (typeof v === 'boolean') return [v ? 1 : 0];
+  if (typeof v === 'number') return [v];
+  if (v && typeof v === 'object') return 'w' in v && v.w !== undefined ? [v.x, v.y, v.z, v.w] : 'z' in v && v.z !== undefined ? [v.x, v.y, v.z] : [v.x, v.y];
+  return [Number(v) || 0];
+}
 function wrap(property, value) {
   if (['origin', 'scale', 'angles', 'color'].includes(property)) return new Vec3(value);
   if (property === 'alpha') return +value;
@@ -244,6 +273,7 @@ function wrap(property, value) {
 }
 function assign(layer, property, value) {
   if (value === undefined) return;
+  if (property.startsWith('fx.')) { layer._fx[property] = property.endsWith('.visible') ? !!value : value; return; }
   if (['origin', 'scale', 'angles', 'color'].includes(property)) layer[property] = new Vec3(value);
   else if (property === 'alpha') layer.alpha = +value;
   else if (property === 'visible') layer.visible = !!value;
@@ -265,18 +295,23 @@ function wmInit(sceneJson) {
   if (cameraLayer && d0scripts(scene, cameraLayer.id)) cameraScripted = true;
   // Baseline before any script code runs (module code runs while compiling): layers scripts never change are not
   // reported, so the phone keeps its own placement and setting-driven visibility for them.
-  for (const l of layers) { l._visible0 = l.visible; last.set(String(l.id), snapshot(l)); }
+  // Fields bound to author properties take their current values, as Wallpaper Engine applies them before scripts run.
+  for (const l of layers) applyBound(l, engine.userProperties);
+  for (const l of layers) { l._visible0 = l.visible; last.set(String(l.id), snapshot(l)); if (l.kind === 'text') last.set('t' + l.id, textSnapshot(l)); }
   for (const d of scene.objects) {
     const layer = byId.get(d.id);
     for (const [property, script] of Object.entries(d.scripts || {})) {
       const entry = { layer, property, handlers: null };
+      // Effect values and effect visibility ("fx.…") start from their saved value.
+      if (property.startsWith('fx.')) layer._fx[property] = fxValue(script.value, property.endsWith('.visible'));
       entry.handlers = guard(entry, () => compile(script.source)(MODULES, layer, layer));
       if (!entry.handlers) continue;
       const props = entry.handlers.scriptProperties, saved = script.properties || {};
       if (props && typeof props === 'object') for (const [k, v] of Object.entries(saved)) props[k] = v && typeof v === 'object' && 'value' in v ? v.value : v;
       // Script parameters bound to author properties follow them, as in Wallpaper Engine.
       entry.userBound = {};
-      for (const [k, v] of Object.entries(saved)) if (v && typeof v === 'object' && typeof v.user === 'string') entry.userBound[k] = v.user;
+      // {user: name} takes the setting's value; {user: {name, condition}} is true when the setting equals the condition.
+      for (const [k, v] of Object.entries(saved)) if (v && typeof v === 'object' && (typeof v.user === 'string' || (v.user && typeof v.user.name === 'string'))) entry.userBound[k] = v.user;
       scripts.push(entry);
     }
   }
@@ -297,41 +332,65 @@ function dispatch(name, event, filter) {
 
 /** One frame: input {runtime, frametime, cursor:[x,y]|null, down, events:[{type,x,y}], timeOfDay}. Returns changed layers and particle states. */
 /** Author settings changed on the phone: engine.userProperties, bound script parameters, then applyUserProperties(changed). */
+/** Layer fields bound to author properties ({field: property}) follow them (text, pointsize, color, alpha). */
+function applyBound(layer, values) {
+  for (const [field, name] of Object.entries(layer.bound || {})) {
+    if (!(name in values)) continue; const v = values[name];
+    if (field === 'text') layer.text = v === null || v === undefined ? '' : String(v);
+    else if (field === 'color') layer.color = new Vec3(v);
+    else if (field === 'pointsize' || field === 'alpha') { const n = +v; if (Number.isFinite(n)) layer[field] = n; }
+  }
+}
+function textSnapshot(l) { return [String(l.text === undefined || l.text === null ? '' : l.text), +l.pointsize, l.color.x, l.color.y, l.color.z]; }
 function applyUser(changed) {
   Object.assign(engine.userProperties, changed);
+  for (const l of layers) applyBound(l, changed);
   for (const entry of scripts) {
     const props = entry.handlers.scriptProperties;
-    if (props && typeof props === 'object') for (const [k, u] of Object.entries(entry.userBound || {})) if (u in changed) props[k] = changed[u];
+    if (props && typeof props === 'object') for (const [k, u] of Object.entries(entry.userBound || {})) {
+      if (typeof u === 'string') { if (u in changed) props[k] = changed[u]; }
+      else if (u.name in changed) props[k] = String(changed[u.name]) === String(u.condition);
+    }
     if (entry.handlers.applyUserProperties) guard(entry, () => entry.handlers.applyUserProperties(changed));
   }
 }
 
+/** engine.timeOfDay: the 24h clock in [0, 1] (IEngine), from the local time. */
+function localTimeOfDay() { const d = new Date(); return (d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds() + d.getMilliseconds() / 1000) / 86400; }
 function wmFrame(inputJson) {
   const frame = JSON.parse(inputJson);
   if (frame.user && started) applyUser(frame.user);
-  engine.frametime = Math.max(0, Math.min(0.5, frame.frametime || 0)); engine.runtime = frame.runtime || 0; engine.timeOfDay = frame.timeOfDay || 0;
+  engine.frametime = Math.max(0, Math.min(0.5, frame.frametime || 0)); engine.runtime = frame.runtime || 0; engine.timeOfDay = typeof frame.timeOfDay === 'number' ? frame.timeOfDay : localTimeOfDay();
   if (frame.cursor) { input.cursorWorldPosition = new Vec3(frame.cursor[0], frame.cursor[1], 0); input.cursorScreenPosition = new Vec2(frame.screen ? frame.screen[0] : 0, frame.screen ? frame.screen[1] : 0); }
   input.cursorLeftDown = !!frame.down;
   if (!started) {
     started = true;
+    // init runs first for every script, then each receives the current author settings (applyUserProperties).
     for (const entry of scripts) {
-      if (entry.handlers.applyUserProperties) guard(entry, () => entry.handlers.applyUserProperties(engine.userProperties));
       if (entry.handlers.init) {
-        const value = guard(entry, () => entry.handlers.init(wrap(entry.property, entry.layer[entry.property])));
+        const value = guard(entry, () => entry.handlers.init(wrap(entry.property, current(entry.layer, entry.property))));
         if (entry.property !== 'scene') assign(entry.layer, entry.property, value);
       }
     }
+    for (const entry of scripts) if (entry.handlers.applyUserProperties) guard(entry, () => entry.handlers.applyUserProperties(engine.userProperties));
   }
   for (const e of frame.events || []) {
-    const point = new Vec3(e.x, e.y, 0), event = { worldPosition: point, screenPosition: new Vec2(0, 0) };
+    // button 0: the touch acts as the left mouse button (scripts check event.button before reacting).
+    const point = new Vec3(e.x, e.y, 0), event = { worldPosition: point, screenPosition: new Vec2(0, 0), button: 0 };
     if (e.type === 'move') {
-      dispatch('cursorMove', event);
       const now = new Set(layers.filter((l) => l.contains(point)));
       for (const l of now) if (!hovered.has(l)) dispatch('cursorEnter', event, (x) => x === l);
       for (const l of hovered) if (!now.has(l)) dispatch('cursorLeave', event, (x) => x === l);
       hovered = now;
+      // Layer events: cursorMove reaches the layers under the cursor (each calendar day claims the hover as it is crossed).
+      dispatch('cursorMove', event, (l) => now.has(l));
     } else if (e.type === 'down') dispatch('cursorDown', event, (l) => l.contains(point));
-    else if (e.type === 'up') { dispatch('cursorUp', event, (l) => l.contains(point)); if (e.click) dispatch('cursorClick', event, (l) => l.contains(point)); }
+    else if (e.type === 'up') {
+      dispatch('cursorUp', event, (l) => l.contains(point)); if (e.click) dispatch('cursorClick', event, (l) => l.contains(point));
+      // A phone has no hover: a lifted finger leaves the layers it was over.
+      for (const l of hovered) dispatch('cursorLeave', event, (x) => x === l);
+      hovered = new Set();
+    }
   }
   for (let i = 0; i < timers.length;) {
     const t = timers[i];
@@ -340,11 +399,12 @@ function wmFrame(inputJson) {
   }
   for (const entry of scripts) {
     if (!entry.handlers.update || entry.property === 'scene' || (entry.failures || 0) > 30) continue;
-    const value = guard(entry, () => entry.handlers.update(wrap(entry.property, entry.layer[entry.property])));
+    const value = guard(entry, () => entry.handlers.update(wrap(entry.property, current(entry.layer, entry.property))));
     assign(entry.layer, entry.property, value);
   }
   const changed = {};
   for (const l of layers) {
+    if (l.id < 0) continue;
     const s = snapshot(l), key = String(l.id), before = last.get(key);
     if (!before || s.some((v, i) => v !== before[i])) { changed[key] = s; last.set(key, s); }
   }
@@ -353,8 +413,9 @@ function wmFrame(inputJson) {
   const camera = cameraSet || cameraScripted ? (!cameraBefore || cameraNow.some((v, i) => v !== cameraBefore[i]) ? (last.set('camera', cameraNow), cameraNow) : undefined) : undefined;
   const texts = {};
   for (const l of layers) {
-    if (l.kind !== 'text') continue;
-    const t = [String(l.text === undefined || l.text === null ? '' : l.text), +l.pointsize, l.color.x, l.color.y, l.color.z], key = 't' + l.id, before = last.get(key);
+    if (l.kind !== 'text' || l.id < 0) continue;
+    // Only changes since the baseline: the phone already shows the converted text and the author settings.
+    const t = textSnapshot(l), key = 't' + l.id, before = last.get(key);
     if (!before || t.some((v, i) => v !== before[i])) { texts[String(l.id)] = t; last.set(key, t); }
   }
   // Scene bloom fields scripts changed (IScene.bloom, bloomstrength, bloomthreshold, bloomtint).
@@ -362,7 +423,13 @@ function wmFrame(inputJson) {
   const bloomNow = [thisScene.bloom ? 1 : 0, +thisScene.bloomstrength, +thisScene.bloomthreshold, tint.x, tint.y, tint.z].map((v) => Math.round(v * 1e4) / 1e4);
   const bloomBefore = last.get('bloom'); let bloom;
   if (!bloomBefore) last.set('bloom', bloomNow); else if (bloomNow.some((v, i) => v !== bloomBefore[i])) { last.set('bloom', bloomNow); bloom = bloomNow; }
-  const out = JSON.stringify({ layers: changed, texts, camera, bloom, errors: errors.splice(0) });
+  // Effect values and visibility scripts changed, by object: {id: {key: [numbers]}}.
+  const fx = {};
+  for (const l of layers) for (const [key, v] of Object.entries(l._fx)) {
+    const now = fxArray(v).map((x) => Math.round((+x || 0) * 1e5) / 1e5), k = 'f' + l.id + key, before = last.get(k);
+    if (!before || now.some((x, i) => x !== before[i]) || now.length !== before.length) { (fx[String(l.id)] = fx[String(l.id)] || {})[key] = now; last.set(k, now); }
+  }
+  const out = JSON.stringify({ layers: changed, texts, camera, bloom, fx, errors: errors.splice(0) });
   return out;
 }
 

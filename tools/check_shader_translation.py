@@ -118,6 +118,40 @@ def one_pass(kind, material, vertex, fragment, override, includes):
     yield kind, {'vertex': vertex, 'fragment': fragment, 'combos': combos, 'includes': includes}, None
 
 
+UNIFORM = re.compile(r'^\s*uniform\s+\w+\s+(\w+)', re.M)
+MODULO_FLOAT = re.compile(r'%\s*float\s*\(|\bfloat\s*\(\s*int\s*\([^;%]*\)\s*\)\s*%')
+
+
+def lint(glsl):
+    """GLSL problems the translator has produced before and Android compilers reject."""
+    problems = []
+    if MODULO_FLOAT.search(glsl):
+        problems.append('% with a float operand')
+    for match in UNIFORM.finditer(glsl):
+        name = match.group(1)
+        first = re.search(r'\b' + re.escape(name) + r'\b', glsl)
+        if first and first.start() < match.start():
+            problems.append(name + ' used before its declaration')
+    return problems
+
+
+def regressions(workshop):
+    """Author shaders that once failed on the phone (3462491575): blurprecise, audio_responsive_oscilloscope."""
+    folder = pathlib.Path(workshop) / '3462491575'
+    if not (folder / 'scene.pkg').is_file():
+        return []
+    package = Package(folder / 'scene.pkg')
+    includes = engine_headers()
+    includes.update({name[len('shaders/'):]: package.text(name) for name in package.entries if name.startswith('shaders/') and name.endswith('.h')})
+    out = []
+    for base, combos in (('shaders/workshop/2981960200/effects/blur_precise_gaussian', {'VERTICAL': 1, 'ENABLEMASK': 1}),
+                         ('shaders/workshop/2981960200/effects/blur_precise_gaussian', {}),
+                         ('shaders/workshop/2799421411/effects/audio_responsive_oscilloscope', {})):
+        if package.has(base + '.frag'):
+            out.append(('regression ' + base.rsplit('/', 1)[-1], {'vertex': package.text(base + '.vert'), 'fragment': package.text(base + '.frag'), 'combos': combos, 'includes': includes}))
+    return out
+
+
 def main():
     workshop = os.environ.get('WVB_WORKSHOP_DIR')
     node = shutil.which('node')
@@ -141,6 +175,8 @@ def main():
                 skipped[kind + ': ' + reason] += 1
             else:
                 kinds.append(kind); requests.append(request)
+    for kind, request in regressions(workshop):
+        kinds.append(kind); requests.append(request)
     with tempfile.TemporaryDirectory(dir=ROOT / '.cache') as work:
         source, target = pathlib.Path(work, 'requests.json'), pathlib.Path(work, 'results.json')
         source.write_text(json.dumps(requests), encoding='utf-8')
@@ -149,6 +185,9 @@ def main():
     passed, failures = collections.Counter(), collections.defaultdict(list)
     for kind, result in zip(kinds, results):
         good = result['ok'] and all(result[stage].startswith('#version 300 es') and 'void main' in result[stage] for stage in ('vertex', 'fragment'))
+        problems = [stage + ': ' + p for stage in ('vertex', 'fragment') for p in (lint(result[stage]) if result.get('ok') else [])]
+        if good and problems:
+            good = False; result = dict(result, error='; '.join(problems))
         if good:
             passed[kind] += 1
         else:

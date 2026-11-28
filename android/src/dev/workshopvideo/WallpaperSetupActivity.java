@@ -21,7 +21,7 @@ import java.io.File;
 import java.util.concurrent.*;
 
 /** Only verified, available wallpaper modes are offered; the system confirms live scope. */
-public final class WallpaperSetupActivity extends Activity {
+public final class WallpaperSetupActivity extends Activity implements EffectPanel.PicturePicker {
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private VideoApp app;private File source;private String sourceId,kind="video";private JSONObject effects=EffectOptions.normalize(null);private final dev.workshopvideo.core.LauncherPaging previewPaging=new dev.workshopvideo.core.LauncherPaging();private MotionInput motionInput;private LinearLayout effectsBox;private boolean effectsExpanded;private String title="壁纸";private boolean hasXray;
     /** Scenes with scripts react to touch (it stands in for the mouse), so the preview forwards every touch. */
@@ -168,7 +168,9 @@ public final class WallpaperSetupActivity extends Activity {
         if(effectPanel!=null&&effectsBox!=null){effectsBox.removeView(effectPanel);effectPanel=new EffectPanel(this,effects,motionInput.available(),kind,this::effectsChanged);effectsBox.addView(effectPanel);}
     }
     private boolean pagingChecked;
-    private void effectsChanged(JSONObject options){effects=kind.equals("video")?EffectOptions.video(options):EffectOptions.normalize(options);if(kind.equals("video")){boolean scroll=effects.optString("motionMode").equals("scroll");VideoApp.put(effects,"pan",scroll);VideoApp.put(effects,"gyro",effects.optString("motionMode").equals("device"));VideoApp.put(effects,"touch",false);fit=effects.optString("alignment").equals("free");updatingEffects=true;if(pan!=null)pan.setChecked(scroll);updatingEffects=false;}else if(pan!=null){updatingEffects=true;pan.setChecked(effects.optBoolean("pan"));updatingEffects=false;}if(movieRenderer!=null)movieRenderer.configure(previewConfiguration());updatePreviewPower();main.removeCallbacks(saveEffects);main.postDelayed(saveEffects,400);}
+    private void effectsChanged(JSONObject options){
+        // Editing the work that is already live: its author settings follow immediately on the wallpaper too.
+        if(source!=null&&!kind.equals("video")){JSONObject copy;try{copy=new JSONObject(options.toString());}catch(org.json.JSONException e){copy=null;}if(copy!=null){JSONObject c=copy;File from=source;app.work.submit(()->WallpaperStore.updateAuthorSettings(this,from,c));}}effects=kind.equals("video")?EffectOptions.video(options):EffectOptions.normalize(options);if(kind.equals("video")){boolean scroll=effects.optString("motionMode").equals("scroll");VideoApp.put(effects,"pan",scroll);VideoApp.put(effects,"gyro",effects.optString("motionMode").equals("device"));VideoApp.put(effects,"touch",false);fit=effects.optString("alignment").equals("free");updatingEffects=true;if(pan!=null)pan.setChecked(scroll);updatingEffects=false;}else if(pan!=null){updatingEffects=true;pan.setChecked(effects.optBoolean("pan"));updatingEffects=false;}if(movieRenderer!=null)movieRenderer.configure(previewConfiguration());updatePreviewPower();main.removeCallbacks(saveEffects);main.postDelayed(saveEffects,400);}
     private void begin(){
         if(busy||waiting||!canStill||frameLoading||loadedFrameUs!=selectedUs||videoSelected&&canVideo&&!movieReady)return;WallpaperManager manager=WallpaperManager.getInstance(this);if(!manager.isWallpaperSupported()||!manager.isSetWallpaperAllowed()){setStatus("系统当前不允许更改壁纸。");return;}
         if(sceneContent()&&!canVideo){setStatus("场景未通过运行检查，无法设置。");return;}
@@ -197,7 +199,16 @@ public final class WallpaperSetupActivity extends Activity {
     }
 
     private void failure(Exception e){runOnUiThread(()->{if(dead)return;busy=false;waiting=false;setStatus(VideoApp.error(e));refresh();});}
-    @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request!=42||staged==null)return;pickerElapsedMs=pickerStartedMs<0?-1:android.os.SystemClock.elapsedRealtime()-pickerStartedMs;WallpaperStore.record(this,"picker_callback",staged,"result="+result+" elapsedMs="+pickerElapsedMs+" serviceReached="+WallpaperStore.serviceReached(this,staged.optString("file")));pickerResult=result;setStatus("正在完成设置…");queueReconcile();}
+    /** Picture requested by a scenetexture setting in the effect panel. */
+    private java.util.function.Consumer<android.net.Uri> pendingPicture;
+    @Override public void pickPicture(java.util.function.Consumer<android.net.Uri> done){
+        pendingPicture=done;
+        try{startActivityForResult(new Intent(Intent.ACTION_GET_CONTENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE),43);}
+        catch(android.content.ActivityNotFoundException none){pendingPicture=null;setStatus("系统没有可用的图片选择器。");}
+    }
+    @Override protected void onActivityResult(int request,int result,Intent data){
+        if(request==43){java.util.function.Consumer<android.net.Uri> done=pendingPicture;pendingPicture=null;if(done!=null)done.accept(result==RESULT_OK&&data!=null?data.getData():null);return;}
+        super.onActivityResult(request,result,data);if(request!=42||staged==null)return;pickerElapsedMs=pickerStartedMs<0?-1:android.os.SystemClock.elapsedRealtime()-pickerStartedMs;WallpaperStore.record(this,"picker_callback",staged,"result="+result+" elapsedMs="+pickerElapsedMs+" serviceReached="+WallpaperStore.serviceReached(this,staged.optString("file")));pickerResult=result;setStatus("正在完成设置…");queueReconcile();}
     private void queueReconcile(){
         if(dead||staged==null||pickerResult==Integer.MIN_VALUE||reconciling||!resumed||!hasWindowFocus())return;
         reconciling=true;pickerForegroundMs=pickerStartedMs<0?-1:android.os.SystemClock.elapsedRealtime()-pickerStartedMs;

@@ -73,6 +73,16 @@ public final class WorkshopQuery {
         catch (RuntimeException e) { throw new IllegalArgumentException("日期格式应为 YYYY-MM-DD。"); }
     }
 
+    private static final java.util.regex.Pattern ITEM_LINK = java.util.regex.Pattern.compile("(?:filedetails/?\\?(?:[^\\s]*&)?id=|^)(\\d{6,12})(?:\\D|$)");
+    /** Workshop item named directly by the search text: a pasted Steam link (…filedetails/?id=N) or a bare ID; else -1. */
+    public static long itemId(String text) {
+        if (text == null) return -1;
+        String t = text.trim(); if (t.isEmpty() || t.length() > 300) return -1;
+        if (!t.matches("\\d{6,12}") &&!t.contains("filedetails")) return -1;
+        java.util.regex.Matcher m = ITEM_LINK.matcher(t);
+        return m.find() ? Long.parseLong(m.group(1)) : -1;
+    }
+
     public boolean acceptsTitle(String title) {
         // WE's native filterTitle mapping has not been established. Make the
         // title-only constraint explicit and deterministic on the returned page.

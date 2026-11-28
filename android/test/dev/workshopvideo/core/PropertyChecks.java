@@ -10,6 +10,10 @@ final class PropertyChecks {
         check(PropertyCondition.test("mon.value",get)&&!PropertyCondition.test("off.value",get)&&PropertyCondition.test("!off.value",get),"switch truth and negation");
         check(PropertyCondition.test("size.value>0.5",get)&&!PropertyCondition.test("size.value<=0.5",get)&&PropertyCondition.test("mode.value!=1",get),"numeric comparisons");
         check(PropertyCondition.test("mon.value && beijing.value==0",get)&&!PropertyCondition.test("mon.value && off.value",get)&&PropertyCondition.test("off.value || mon.value",get),"and / or");
+        check(PropertyCondition.test("[0, 2, 3].includes(beijing.value)",get)&&!PropertyCondition.test("[1, 2].includes(beijing.value)",get),"array includes (dock slot counts)");
+        check(!PropertyCondition.test("mon.value && (off.value || beijing.value == 1)",get)&&PropertyCondition.test("(off.value || mon.value) && size.value >= 0.65",get),"parentheses");
+        check(PropertyCondition.test("snewpropertys.value && [1, 2].includes(unknown.value)",get),"unknown settings do not hide");
+        check(PropertyCondition.test("beijing.value === '0' && mon.value == true",get)&&PropertyCondition.test("some(js) || other",get),"strict equality as loose; unreadable shows");
         check(PropertyCondition.test("unknown.value==3",get)&&PropertyCondition.test("something odd",get),"unknown properties and syntax keep the setting visible");
         check(java.util.Arrays.equals(UserValues.vector("0.5 1 0.25",3),new float[]{.5f,1,.25f}),"vector strings");
         check(java.util.Arrays.equals(UserValues.vector(0.65,3),new float[]{.65f,.65f,.65f}),"a scalar slider fills a vector");

@@ -21,6 +21,9 @@ final class DiscoverResults {
     /** Network fetch on the caller's worker thread; the result is cached for back/forward paging. */
     Page fetch(SteamSession session,WorkshopQuery query)throws Exception {
         String key=query.cacheKey();Page hit=cache.get(key);if(hit!=null)return hit;
+        // A pasted workshop link or item ID opens that item directly.
+        long id=WorkshopQuery.itemId(query.text);
+        if(id>0){Page page=new Page(key,1,List.of(session.details(id)));cache.put(key,page);return page;}
         var response=session.query(query);List<PublishedFileDetails> found=new ArrayList<>();
         for(var item:response.getPublishedfiledetailsList())if(item.getResult()==1&&item.getConsumerAppid()==WorkshopQuery.APP_ID&&query.acceptsTitle(item.getTitle()))found.add(item);
         Page page=new Page(key,Integer.toUnsignedLong(response.getTotal()),List.copyOf(found));cache.put(key,page);return page;

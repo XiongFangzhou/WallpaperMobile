@@ -63,7 +63,7 @@ final class EffectPanel extends LinearLayout {
    if(group!=null&&!expanded.contains(group))continue;
    if(type.equals("divider")){View line=new View(activity);line.setBackgroundColor(Ui.LINE);LayoutParams lp=new LayoutParams(-1,dp(1));lp.topMargin=dp(8);lp.bottomMargin=dp(8);control(line,lp);continue;}
    if(type.equals("text")){TextView note=label(label,12,Ui.MUTED);note.setLineSpacing(dp(3),1);control(note);continue;}
-   boolean works=p.optBoolean("effective",true)&&java.util.List.of("bool","combo","slider","color","textinput").contains(type);String title=works?label:label+"（手机上暂不生效）";
+   boolean works=p.optBoolean("effective",true)&&java.util.List.of("bool","combo","slider","color","textinput","scenetexture").contains(type);String title=works?label:label+"（手机上暂不生效）";
    switch(type){
     case "slider"->{if(!value.has(key))VideoApp.put(value,key,p.optDouble("value",p.optDouble("min",0)));slider(key,title,(float)p.optDouble("min",0),(float)p.optDouble("max",1),"");}
     case "bool"->{if(!value.has(key))VideoApp.put(value,key,dev.workshopvideo.core.PropertyCondition.truthy(p.opt("value")));toggle(key,title,true);}
@@ -72,8 +72,9 @@ final class EffectPanel extends LinearLayout {
      String[] keys=new String[Math.min(8,options.length())],labels=new String[keys.length];
      for(int i=0;i<keys.length;i++){keys[i]=options.optJSONArray(i).optString(1);labels[i]=options.optJSONArray(i).optString(0);}
      if(!value.has(key))VideoApp.put(value,key,String.valueOf(p.opt("value")));choice(key,title,keys,labels);}
+    case "scenetexture"->pictureControl(key,title);
     case "textinput"->{if(!value.has(key))VideoApp.put(value,key,p.optString("value",""));textControl(key,title);}
-    default->{String shown=String.valueOf(p.opt("value"));TextView item=label(label+(shown.isEmpty()||shown.equals("null")?"":"："+shown)+"（手机上暂不生效）",13,Ui.MUTED);control(item);}
+    default->{String shown=String.valueOf(p.opt("value"));TextView item=label(label+(shown.isEmpty()||shown.equals("null")?"":"："+shown)+(p.optBoolean("unused")?"":"（手机上暂不生效）"),13,Ui.MUTED);control(item);}
    }
   }
  }
@@ -94,6 +95,24 @@ final class EffectPanel extends LinearLayout {
  }
  private void backgroundColor(){colorControl("backgroundColor","背景颜色","#000000");}
  /** Free text from the author's settings (a textinput property), applied as it is typed. */
+ /** Activities that can ask the system for a picture (scenetexture settings). */
+ interface PicturePicker{void pickPicture(java.util.function.Consumer<android.net.Uri> done);}
+ /** A scenetexture setting: the author's picture, or one chosen from the phone (stored privately by UserPictures). */
+ private void pictureControl(String key,String title){
+  TextView heading=label(title,13,Ui.TEXT);heading.setPadding(0,dp(10),0,dp(6));control(heading);
+  boolean chosen=!value.optString(key,"").isEmpty()&&new java.io.File(value.optString(key)).isFile();
+  TextView state=label(chosen?"已选择手机里的图片":"使用作品自带的图片",12,Ui.MUTED);control(state);
+  LinearLayout row=new LinearLayout(activity);
+  Button pick=Ui.button(activity,chosen?"更换图片":"选择图片",Ui.Kind.SECONDARY,()->{
+   if(!(activity instanceof PicturePicker picker)){android.widget.Toast.makeText(activity,"这里不能选择图片。",android.widget.Toast.LENGTH_SHORT).show();return;}
+   picker.pickPicture(uri->{if(uri==null)return;android.content.Context app=activity.getApplicationContext();
+    new Thread(()->{try{java.io.File file=UserPictures.importPicture(app,uri);activity.runOnUiThread(()->{VideoApp.put(value,key,file.getAbsolutePath());build();changed();});}
+     catch(Exception|OutOfMemoryError failed){activity.runOnUiThread(()->android.widget.Toast.makeText(activity,"无法读取这张图片。",android.widget.Toast.LENGTH_SHORT).show());}},"user-picture").start();});
+  });pick.setTag("picture-"+key);
+  LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(0,dp(44),1);row.addView(pick,pp);
+  if(chosen){Button clear=Ui.button(activity,"恢复默认",Ui.Kind.GHOST,()->{VideoApp.put(value,key,"");build();changed();});LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(0,dp(44),1);cp.leftMargin=dp(8);row.addView(clear,cp);}
+  control(row);
+ }
  private void textControl(String key,String title){
   TextView heading=label(title,13,Ui.TEXT);heading.setPadding(0,dp(10),0,dp(6));control(heading);
   android.widget.EditText field=new android.widget.EditText(activity);field.setText(value.optString(key,""));field.setTextSize(14);field.setTextColor(Ui.TEXT);field.setHintTextColor(Ui.MUTED);field.setTag("text-"+key);

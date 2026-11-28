@@ -14,7 +14,7 @@ final class SceneAdapter {
   final WallpaperContent.Scene scene=new WallpaperContent.Scene();
   final LinkedHashMap<String,Integer> skipped=new LinkedHashMap<>();
   final LinkedHashSet<String> effects=new LinkedHashSet<>();
-  int objects,images,particles,texts,sounds,models,scripts,bindings,xrays,animations,puppets,puppetMotions,puppetStatic,blended,solidLayers,composeLayers,fullscreenLayers,textLayers,effectGroups,multiPass,particleSystems,particleApproximate,particleChildren;
+  int objects,images,particles,texts,sounds,models,scripts,bindings,xrays,animations,puppets,puppetMotions,puppetStatic,blended,solidLayers,composeLayers,fullscreenLayers,textLayers,shapeLayers,shaped,videos,sourceLayers,xrayShaders,effectGroups,multiPass,particleSystems,particleApproximate,particleChildren;
   /** Fonts text layers name that neither the scene nor Wallpaper Engine's assets provide. */
   final java.util.TreeSet<String> missingFonts=new java.util.TreeSet<>();
   /** Fonts read during conversion, shared by every text layer that uses them. */
@@ -33,8 +33,14 @@ final class SceneAdapter {
   JSONObject cameraObject;
   /** Every scene object with its saved properties and scripts, run on the phone by assets/scene-script-runtime.js. */
   JSONObject scriptScene;String scriptSources="";int scriptedHidden;
+  /** scene.json as read, to tell settings the scene never uses (they do nothing on the PC either). */
+  String sceneText="";
   /** All author properties (project.json), and the share of full resolution images keep so every layer fits the phone. */
   JSONObject declared=new JSONObject();float density=1;boolean bloom;
+  /** Object id → parent object id, from scene.json. */
+  final java.util.HashMap<Integer,Integer> parentOf=new java.util.HashMap<>();
+  /** Objects whose scripts reach other layers or scripts (shared state, getLayer…): their parameters matter even when the object itself is not drawn. */
+  final java.util.Set<Integer> reachingScripts=new java.util.HashSet<>();
   /** Author properties (project.json) the converted layers depend on, offered as switches on the phone. */
   final JSONObject properties=new JSONObject();int propertyLayers;JSONObject general=new JSONObject();
   void skip(String reason){skipped.put(reason,skipped.getOrDefault(reason,0)+1);}
@@ -45,6 +51,11 @@ final class SceneAdapter {
    if(puppets>0)s.append("骨骼图层：").append(puppets).append(" 个按原作网格绘制").append(puppetMotions>0?"，其中 "+puppetMotions+" 个播放骨骼动画":"").append("。\n");
    if(density<.995f)s.append("为在本机内存内保留全部图层，图片清晰度按比例降低到原来的 ").append(Math.round(density*100)).append("%。").append((char)10);
    if(multiPass>0)s.append("多步骤特效（模糊、光线、辉光等）：").append(multiPass).append(" 个按原作的渲染步骤运行。\n");
+   if(shaped>0)s.append("镜像或倾斜的图层：").append(shaped).append(" 个，按正交投影绘制（透视图层近似）。").append((char)10);
+   if(videos>0)s.append("视频图层：").append(videos).append(" 个，在手机上静音循环播放，作者特效逐帧作用于视频。").append((char)10);
+   if(xrayShaders>0)s.append("X-ray（作者着色器，含遮罩或引用其他图层）：").append(xrayShaders).append(" 个，手指按住处显示。").append((char)10);
+   if(sourceLayers>0)s.append("被其他图层特效引用的隐藏图层：").append(sourceLayers).append(" 个，只作为特效素材渲染，不直接显示。").append((char)10);
+   if(shapeLayers>0)s.append("形状层：").append(shapeLayers).append(" 个（如光束），由作者特效绘制。").append((char)10);
    if(textLayers>0)s.append("文字图层：").append(textLayers).append(" 个，时钟、日期等由作者脚本实时更新").append(missingFonts.isEmpty()?"":"；缺少字体 "+String.join("、",missingFonts)+"，用系统字体代替").append("。").append((char)10);
    if(bloom)s.append("泛光：按 Wallpaper Engine 的泛光通道（阈值、强度、色调）在手机上渲染。").append((char)10);
    if(fullscreenLayers>0)s.append("全屏后期层：").append(fullscreenLayers).append(" 个，作者特效作用于其下方的整个画面。").append((char)10);
@@ -70,6 +81,20 @@ final class SceneAdapter {
  }
  static Object value(Object v){return v instanceof JSONObject?((JSONObject)v).opt("value"):v;}
  static double number(Object v,double fallback){try{return Double.parseDouble(String.valueOf(value(v)));}catch(Exception e){return fallback;}}
+ /**
+  * Whether an object hidden by default still renders, as the texture of another layer's effect: it or an ancestor is
+  * named as a layer composite, and nothing between it and that ancestor is hidden on its own (children hidden inside
+  * a group are not part of its result).
+  */
+ static boolean composited(JSONObject o,java.util.Map<Integer,JSONObject> byId,java.util.Set<Integer> referenced){
+  JSONObject current=o;boolean hiddenBelow=false;
+  for(int depth=0;current!=null&&depth<32;depth++){
+   if(current.has("id")&&referenced.contains(current.optInt("id")))return !hiddenBelow;
+   if(!visible(current))hiddenBelow=true;
+   if(!current.has("parent")||current.isNull("parent"))break;current=byId.get((int)number(current.opt("parent"),-1));
+  }
+  return false;
+ }
  static boolean visible(JSONObject o){Object v=value(o.opt("visible"));return v==null||v==JSONObject.NULL||!Boolean.FALSE.equals(v)&&!"false".equalsIgnoreCase(String.valueOf(v));}
  static void scan(Object value,Report r){
   if(value instanceof JSONObject){JSONObject o=(JSONObject)value;
@@ -85,7 +110,7 @@ final class SceneAdapter {
   finally{normalized.delete();}
  }
  /** Raise whenever conversion output improves; saved scenes made by an older version are converted again from their originals. */
- static final int VERSION=33;
+ static final int VERSION=47;
  /** Wallpaper Engine's own assets (downloaded on the phone, or the desktop install in checks); null when unavailable. */
  static volatile File engineRoot;
  static Report inspect(ContentArchive a)throws Exception {
@@ -94,7 +119,7 @@ final class SceneAdapter {
    if(a.has("wallpaper-mobile.json"))throw new IOException("已经是手机场景，无需适配");
    String entry="scene.json";if(a.has("project.json")){String declared=WallpaperContent.json(a,"project.json").optString("file");if(declared.endsWith(".json")&&a.has(declared))entry=declared;}
    JSONObject root=WallpaperContent.json(a,entry);scan(root,r);
-   JSONObject projectProperties=projectProperties(a);resolve(root,projectProperties);r.declared=projectProperties;
+   JSONObject projectProperties=projectProperties(a);resolve(root,projectProperties);r.declared=projectProperties;r.sceneText=root.toString();
    r.general=root.optJSONObject("general")==null?new JSONObject():root.optJSONObject("general");cameraSettings(root,projectProperties,r);
    JSONObject general=root.optJSONObject("general"),projection=general==null?null:general.optJSONObject("orthogonalprojection");
    if(projection==null)throw new IOException("缺少正交画布尺寸，无法可靠恢复布局");
@@ -104,29 +129,36 @@ final class SceneAdapter {
    long pixels=0;JSONObject includes=null;
    if(r.scripts>0){StringBuilder sources=new StringBuilder();r.scriptScene=scriptScene(a,objects,r.scene.width,r.scene.height,sources,projectProperties,r);r.scriptSources=sources.toString();}
    java.util.HashMap<Integer,Integer> outputIndex=new java.util.HashMap<>();java.util.IdentityHashMap<WallpaperContent.Layer,Integer> attachSources=new java.util.IdentityHashMap<>();
-   java.util.HashMap<Integer,JSONObject> byId=new java.util.HashMap<>();for(int i=0;i<objects.length();i++){JSONObject o=objects.optJSONObject(i);if(o!=null&&o.has("id"))byId.put(o.optInt("id"),o);}
+   java.util.HashMap<Integer,JSONObject> byId=new java.util.HashMap<>();for(int i=0;i<objects.length();i++){JSONObject o=objects.optJSONObject(i);if(o!=null&&o.has("id")){byId.put(o.optInt("id"),o);if(o.has("parent")&&!o.isNull("parent"))r.parentOf.put(o.optInt("id"),(int)number(o.opt("parent"),-1));}}
+   // Objects whose rendered result other layers' effects sample (_rt_imageLayerComposite_<id>_a): kept even when hidden.
+   java.util.Set<Integer> referenced=new java.util.HashSet<>();
+   for(int i=0;i<objects.length();i++){JSONObject o=objects.optJSONObject(i);JSONArray fx=o==null?null:o.optJSONArray("effects");if(fx!=null)for(int e=0;e<fx.length();e++){JSONObject effect=fx.optJSONObject(e);if(effect!=null)referenced.addAll(SceneEffects.composites(effect));}}
    for(int i=0;i<objects.length();i++){
     if(Thread.currentThread().isInterrupted())throw new InterruptedIOException("已停止适配");
     JSONObject o=objects.getJSONObject(i);String image=o.optString("image","");boolean imageObject=!image.isEmpty()&&!image.equals("null");
     if(imageObject)r.images++;if(o.has("particle")&&!o.isNull("particle"))r.particles++;if(o.has("text")&&!o.isNull("text"))r.texts++;if(o.has("sound")&&!o.isNull("sound"))r.sounds++;if(o.has("model")&&!o.isNull("model"))r.models++;
     if(!imageObject&&o.has("particle")&&!o.isNull("particle")){
      Visibility shown=visibility(o,byId,projectProperties);
-     if(!shown.fixed&&(r.scriptScene==null||!scriptedVisibility(o,r.scriptSources))){r.skip("默认隐藏");continue;}
+     if(!shown.fixed&&(r.scriptScene==null||!scriptedVisibility(o,r.scriptSources,byId))){r.skip("默认隐藏");continue;}
      try{WallpaperContent.Layer layer=particleLayer(a,o,byId,r);layer.when=shown.when;usedProperties(shown.when,projectProperties,r);if(!shown.fixed)layer.visible=false;if(o.has("id"))outputIndex.put(o.optInt("id"),r.scene.layers.size());r.scene.layers.add(layer);r.particleSystems++;pixels+=(long)layer.bitmap.getWidth()*layer.bitmap.getHeight();}
      catch(InterruptedIOException stop){throw stop;}catch(Exception e){r.skip("粒子："+(e.getMessage()==null?"无法读取":e.getMessage()));}
      continue;
     }
     boolean textObject=!imageObject&&o.has("text")&&!o.isNull("text");
-    if(!imageObject&&!textObject)continue;boolean startHidden=false;
+    // Shape objects ("shape": "quad", e.g. the editor's light shafts preset) have no image: their effects draw everything.
+    // Without a saved size they span the canvas.
+    boolean shapeObject=!imageObject&&!textObject&&"quad".equals(o.optString("shape"));if(shapeObject&&!o.has("size"))o.put("size",r.scene.width+" "+r.scene.height);
+    if(!imageObject&&!textObject&&!shapeObject)continue;boolean startHidden=false;
     Visibility shown=visibility(o,byId,projectProperties);
-    if(!shown.fixed){if(r.scriptScene==null||!scriptedVisibility(o,r.scriptSources)){r.skip("默认隐藏");continue;}startHidden=true;}
+    boolean sourceOnly=false;
+    if(!shown.fixed){if(composited(o,byId,referenced))sourceOnly=true;else if(r.scriptScene==null||!scriptedVisibility(o,r.scriptSources,byId)){r.skip("默认隐藏");continue;}startHidden=true;}
     Bitmap bitmap=null;SceneText text=null;
     try{
      // Skeletal layers keep their rest pose; the image quad is the puppet's bind pose.
-     dev.workshopvideo.core.PuppetModel puppetModel=null;byte[] puppetBytes=null;
+     dev.workshopvideo.core.PuppetModel puppetModel=null;byte[] puppetBytes=null,videoData=null;
      for(String key:new String[]{"origin","size","scale","angles"}){Object raw=o.opt(key);if(raw instanceof JSONObject&&((JSONObject)raw).isNull("value"))throw new IOException("图层变换没有已存默认值");}
      float[] crop=WallpaperContent.vector(o.opt("cropoffset"),0,0);for(float v:crop)if(Math.abs(v)>.001)throw new IOException("非零裁切偏移");
-     JSONObject model=textObject?new JSONObject():WallpaperContent.json(a,WallpaperContent.asset(a,image));scan(model,r);
+     JSONObject model=textObject||shapeObject?new JSONObject():WallpaperContent.json(a,WallpaperContent.asset(a,image));scan(model,r);
      String puppetPath=model.optString("puppet","");
      if(!puppetPath.isEmpty()){
       try{puppetBytes=a.read(ContentArchive.path(puppetPath),64*1024*1024);puppetModel=dev.workshopvideo.core.PuppetModel.parse(puppetBytes);if(puppetModel.mesh==null)throw new IOException("骨骼网格格式不支持");}
@@ -136,7 +168,7 @@ final class SceneAdapter {
      boolean compose=model.optBoolean("passthrough"),fullscreen=compose&&model.optBoolean("fullscreen");if(fullscreen)r.fullscreenLayers++;else if(compose)r.composeLayers++;
      boolean solid=model.optBoolean("solidlayer");if(solid)r.solidLayers++;
      JSONObject pass=new JSONObject();
-     if(!compose&&!textObject){
+     if(!compose&&!textObject&&!shapeObject){
      JSONObject mat=WallpaperContent.json(a,WallpaperContent.asset(a,model.getString("material")));scan(mat,r);
      JSONArray passes=mat.optJSONArray("passes");if(passes==null||passes.length()!=1)throw new IOException("多通道或非图片材质");
      pass=passes.getJSONObject(0);String shader=pass.optString("shader");if(!solid&&!shader.equals("genericimage2")&&!shader.equals("genericimage4"))throw new IOException("自定义着色器");
@@ -145,19 +177,29 @@ final class SceneAdapter {
      Object passBlending=pass.opt("blending");if(passBlending instanceof Number&&((Number)passBlending).intValue()>1)throw new IOException("非标准混合模式");
      int colorBlend=(int)number(o.opt("colorBlendMode"),0);if(colorBlend<0||colorBlend>32)throw new IOException("未知的混合模式");boolean additive="additive".equals(pass.optString("blending"));
      java.util.List<dev.workshopvideo.core.TexturePixels.Frame> frames;
-     if(textObject){frames=java.util.List.of();text=text(a,o,projectProperties,r);bitmap=text.draw();r.textLayers++;}
-     else if(solid||compose){frames=java.util.List.of();bitmap=compose?Bitmap.createBitmap(new int[]{0},1,1,Bitmap.Config.ARGB_8888):solidBitmap(o);}
+     // Instanced models (official solidlayer_instance materials) take their textures from the object: instance.textures
+     // replaces the material's, and instance.usertextures binds a slot to an author property (a picture chosen by the user).
+     JSONObject instance=o.optJSONObject("instance");JSONArray instanceTextures=instance==null?null:instance.optJSONArray("textures");
+     String instanceTexture=instanceTextures!=null&&instanceTextures.opt(0) instanceof String t0&&!t0.isEmpty()&&!t0.equals("util/white")?t0:null;
+     JSONArray userTextures=instance==null?null:instance.optJSONArray("usertextures");
+     String textureProperty=userTextures!=null&&userTextures.opt(0) instanceof String u0?declared(u0,projectProperties):null;
+     if(shapeObject){frames=java.util.List.of();bitmap=clearBitmap(o);r.shapeLayers++;}
+     else if(textObject){frames=java.util.List.of();text=text(a,o,projectProperties,r);bitmap=text.draw();r.textLayers++;}
+     else if(solid&&instanceTexture==null||compose){frames=java.util.List.of();bitmap=compose?Bitmap.createBitmap(new int[]{0},1,1,Bitmap.Config.ARGB_8888):solidBitmap(o);}
      else{
-     JSONArray textures=pass.optJSONArray("textures");if(textures==null||textures.length()!=1||!(textures.opt(0) instanceof String))throw new IOException("没有可解码的基础图片纹理");
-     String texture=textures.getString(0);byte[] raw=a.read(WallpaperContent.asset(a,texture),32*1024*1024);
+     JSONArray textures=pass.optJSONArray("textures");if(instanceTexture==null&&(textures==null||textures.length()!=1||!(textures.opt(0) instanceof String)))throw new IOException("没有可解码的基础图片纹理");
+     String texture=instanceTexture!=null?instanceTexture:textures.getString(0);byte[] raw=a.read(WallpaperContent.asset(a,texture),32*1024*1024);
      if(dev.workshopvideo.core.TexturePixels.video(raw)){
       float[] vs=WallpaperContent.vector(o.opt("size"),r.scene.width,r.scene.height),vk=WallpaperContent.vector(o.opt("scale"),1,1);
       float cover=vs.length>=2&&vk.length>=2?Math.abs(vs[0]*vk[0]*vs[1]*vk[1])/((float)r.scene.width*r.scene.height):0;
       if(r.videoTexture.isEmpty()&&cover>=.9f&&!o.has("parent")){r.videoTexture=WallpaperContent.asset(a,texture);r.videoCover=cover;}
-      throw new IOException("视频纹理图层尚不支持");
-     }
+      // The layer plays its MP4 on the phone; the first frame stands in until the decoder delivers one.
+      videoData=dev.workshopvideo.core.TexturePixels.mp4(raw);raw=null;if(videoData.length>WallpaperContent.VIDEO_LIMIT)throw new IOException("图层视频超过 64 MB");
+      frames=java.util.List.of();bitmap=videoPoster(videoData,vs.length>=2?vs[0]:r.scene.width,vs.length>=2?vs[1]:r.scene.height);r.videos++;
+     }else{
      frames=dev.workshopvideo.core.TexturePixels.sprite(raw)?dev.workshopvideo.core.TexturePixels.frames(raw):java.util.List.of();
      bitmap=WallpaperContent.bitmap(raw,!frames.isEmpty());raw=null;
+     }
      }
      bitmap=toDisplayDensity(bitmap,o,r.scene.width,r.scene.height,frames.isEmpty()?1:Math.max(1,frames.size()));
      // Every layer is kept: when the scene outgrows this phone's memory, all images step down in resolution together.
@@ -170,18 +212,26 @@ final class SceneAdapter {
      boolean child=o.has("parent")&&!o.isNull("parent");float[] localOrigin=null;float localAngle=0;
      float[] pos=child?WallpaperContent.vector(o.opt("origin"),0,0):WallpaperContent.vector(o.opt("origin"),r.scene.width/2f,r.scene.height/2f),sz=WallpaperContent.vector(o.opt("size"),bitmap.getWidth(),bitmap.getHeight()),scale=WallpaperContent.vector(o.opt("scale"),1,1),angles=WallpaperContent.vector(o.opt("angles"),0,0,0),depth=WallpaperContent.vector(o.opt("parallaxDepth"),1,1);
      if(text!=null)sz=new float[]{text.blockW,text.blockH};
+     // A composition layer without a saved size covers the canvas.
+     if(compose&&!o.has("size"))sz=new float[]{r.scene.width,r.scene.height};
      if(pos.length>=2&&angles.length>=3){localOrigin=new float[]{pos[0],pos[1]};localAngle=angles[2];}
      if(pos.length>=2&&scale.length>=2&&angles.length>=3){float[] world=world(a,o,byId,pos,scale,angles[2],r.scene.width,r.scene.height);pos=new float[]{world[0],world[1]};scale=new float[]{world[2],world[3]};angles=new float[]{angles[0],angles[1],world[4]};}
      if(pos.length<2||sz.length<2||scale.length<2||angles.length<3)throw new IOException("不完整的图层变换");
-     if(scale[0]<=0||scale[1]<=0||Math.abs(angles[0])>.001||Math.abs(angles[1])>.001)throw new IOException("镜像或 3D 旋转");
+     // Mirroring (negative scale) and x/y rotation project, orthographically, to a 2×2 matrix on the layer's axes (Euler order z·y·x).
+     if(Math.abs(scale[0])<1e-6||Math.abs(scale[1])<1e-6)throw new IOException("图层缩放为零");
+     float[] shape=null;float sgnX=Math.signum(scale[0]),sgnY=Math.signum(scale[1]);double tiltX=angles[0],tiltY=angles[1];
+     if(sgnX<0||sgnY<0||Math.abs(tiltX)>.001||Math.abs(tiltY)>.001){shape=new float[]{(float)(sgnX*Math.cos(tiltY)),(float)(-sgnY*Math.sin(tiltX)*Math.sin(tiltY)),0,(float)(sgnY*Math.cos(tiltX))};r.shaped++;}
+     scale=new float[]{Math.abs(scale[0]),Math.abs(scale[1])};
      WallpaperContent.Layer layer=new WallpaperContent.Layer();layer.name=o.optString("name","图层 "+(i+1));layer.w=sz[0]*scale[0];layer.h=sz[1]*scale[1];layer.x=pos[0]-layer.w/2;layer.y=r.scene.height-pos[1]-layer.h/2;layer.rotation=-(float)Math.toDegrees(angles[2]);layer.depth=Math.max(-2,Math.min(2,depth[0]));layer.alpha=(float)Math.max(0,Math.min(1,number(o.opt("alpha"),1)));layer.frames=frames;layer.compose=compose;layer.fullscreen=fullscreen;
      float[] tint=WallpaperContent.vector(o.opt("color"),1,1,1);if(tint.length>=3)layer.tint=new float[]{tint[0],tint[1],tint[2]};
      if(text!=null){layer.text=text;layer.fontData=text.fontData;layer.fontName=text.fontName;text.fontData=null;if(text.opaque)layer.tint=new float[]{1,1,1};}
      String tintProperty=text!=null&&text.opaque?null:declared(bound(o.opt("color")),projectProperties);if(tintProperty!=null){layer.tintProperty=tintProperty;offer(tintProperty,new JSONObject().put("kind","color"),projectProperties,r);}
      layer.baseW=sz[0];layer.baseH=sz[1];transformChain(o,byId,layer,projectProperties,r,r.scene.width,r.scene.height);
+     layer.shape=shape;layer.videoData=videoData;
+     if(textureProperty!=null&&frames.isEmpty()){layer.textureProperty=textureProperty;offer(textureProperty,new JSONObject().put("kind","texture"),projectProperties,r);}
      String alphaProperty=bound(o.opt("alpha"));if(alphaProperty!=null&&projectProperties.optJSONObject(alphaProperty)!=null){layer.alphaProperty=alphaProperty;offer(alphaProperty,new JSONObject().put("kind","alpha"),projectProperties,r);}layer.objectId=o.has("id")?o.optInt("id"):-1;layer.visible=!startHidden;layer.baseW=sz[0];layer.baseH=sz[1];
      if(child&&r.scriptScene!=null)layer.frame=world(a,o,byId,new float[]{0,0},new float[]{1,1},0,r.scene.width,r.scene.height);
-     if(startHidden)r.scriptedHidden++;layer.when=shown.when;usedProperties(shown.when,projectProperties,r);layer.blend=colorBlend;layer.additive=additive;if(colorBlend!=0||additive)r.blended++;
+     if(startHidden&&!sourceOnly)r.scriptedHidden++;layer.sourceOnly=sourceOnly;if(sourceOnly)r.sourceLayers++;layer.bounded=compose&&!fullscreen;layer.when=shown.when;usedProperties(shown.when,projectProperties,r);layer.blend=colorBlend;layer.additive=additive;if(colorBlend!=0||additive)r.blended++;
      if(puppetModel!=null){
       layer.puppet=puppetModel;layer.puppetData=puppetBytes;layer.puppetW=sz[0];layer.puppetH=sz[1];r.puppets++;
       JSONArray clips=o.optJSONArray("animationlayers");java.util.ArrayList<dev.workshopvideo.core.PuppetModel.Track> tracks=new java.util.ArrayList<>();
@@ -190,7 +240,11 @@ final class SceneAdapter {
       layer.tracks=java.util.List.copyOf(tracks);if(!tracks.isEmpty())r.puppetMotions++;
      }
      if(child&&!o.optString("attachment","").isEmpty()&&localOrigin!=null){layer.attachName=o.optString("attachment");layer.attachX=localOrigin[0];layer.attachY=localOrigin[1];layer.attachAngle=localAngle;attachSources.put(layer,(int)number(o.opt("parent"),-1));}
+     // A zero-size layer has no area to draw; its scripts still run in the script scene.
+     if(layer.w==0||layer.h==0)throw new IOException("尺寸为 0 的空图层，无内容可画");
      if(!Float.isFinite(layer.x)||!Float.isFinite(layer.y)||!Float.isFinite(layer.w)||!Float.isFinite(layer.h)||!Float.isFinite(layer.rotation)||layer.w<=0||layer.h<=0||layer.w>65536||layer.h>65536||Math.abs(layer.x)>65536||Math.abs(layer.y)>65536)throw new IOException("图层尺寸或位置无效");
+     // X-ray variants the built-in reveal does not cover (masks, other layers' results, custom sprites) run from their own shader.
+     java.util.Set<JSONObject> genericXray=java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
      JSONArray objectEffects=o.optJSONArray("effects");if(objectEffects!=null)for(int e=0;e<objectEffects.length();e++){
       JSONObject effect=objectEffects.optJSONObject(e);if(effect==null||!visible(effect)||!effect.optString("file").toLowerCase(Locale.ROOT).contains("xray"))continue;
       try{
@@ -204,14 +258,17 @@ final class SceneAdapter {
        JSONObject constants=passX.optJSONObject("constantshadervalues");layer.revealSize=(float)Math.max(.01,Math.min(1,constants==null?.2:number(constants.opt("size"),.2)));
        Bitmap second=WallpaperContent.bitmap(a.read(WallpaperContent.asset(a,reveal),32*1024*1024));if(pixels+(long)bitmap.getWidth()*bitmap.getHeight()+(long)second.getWidth()*second.getHeight()>budget.pixels()){second.recycle();throw new IOException("X-ray 纹理超过内存预算");}
        layer.reveal=second;pixels+=(long)second.getWidth()*second.getHeight();r.xrays++;r.effects.remove("xray");
-      }catch(Exception failure){if(layer.reveal!=null){layer.reveal.recycle();layer.reveal=null;}r.drop("xray",failure.getMessage()==null?"无法读取":failure.getMessage());}
+      }catch(Exception failure){if(layer.reveal!=null){layer.reveal.recycle();layer.reveal=null;}genericXray.add(effect);}
      }
      if(objectEffects!=null)for(int e=0;e<objectEffects.length();e++){
-      JSONObject effect=objectEffects.optJSONObject(e);if(effect==null||effect.optString("file").toLowerCase(Locale.ROOT).contains("xray"))continue;
+      JSONObject effect=objectEffects.optJSONObject(e);if(effect==null||effect.optString("file").toLowerCase(Locale.ROOT).contains("xray")&&!genericXray.contains(effect))continue;
       // Effects switched by an author property are kept and follow the phone setting; others honour their saved state.
-      JSONArray effectWhen=userCondition(effect.opt("visible"),projectProperties);if(effectWhen==null&&!visible(effect))continue;
+      JSONArray effectWhen=userCondition(effect.opt("visible"),projectProperties);boolean scriptedFx=r.scriptScene!=null&&effect.opt("visible") instanceof JSONObject sv&&sv.opt("script") instanceof String;
+      if(effectWhen==null&&!scriptedFx&&!visible(effect))continue;
       String name=SceneEffects.kind(effect);
-      try{if(layer.effects.size()>=24)throw new IOException("单个图层特效过多");if(includes==null)includes=SceneEffects.includes(a);java.util.List<SceneEffects.Effect> steps=SceneEffects.read(a,effect,includes,++r.effectGroups);if(layer.effects.size()+steps.size()>24){for(SceneEffects.Effect s:steps)s.recycle();throw new IOException("单个图层特效过多");}layer.effects.addAll(steps);if(effectWhen!=null){for(SceneEffects.Effect step:steps)step.when=effectWhen;offer(effectWhen.getJSONArray(0).optString(0),new JSONObject().put("kind","effect"),projectProperties,r);}for(SceneEffects.Effect step:steps)for(String property:step.bound.values())offer(property,new JSONObject().put("kind","uniform"),projectProperties,r);r.keep(name);if(steps.size()>1)r.multiPass++;}
+      try{if(layer.effects.size()>=24)throw new IOException("单个图层特效过多");if(includes==null)includes=SceneEffects.includes(a);java.util.List<SceneEffects.Effect> steps=SceneEffects.read(a,effect,includes,++r.effectGroups);if(layer.effects.size()+steps.size()>24){for(SceneEffects.Effect s:steps)s.recycle();throw new IOException("单个图层特效过多");}layer.effects.addAll(steps);if(genericXray.contains(effect)){for(SceneEffects.Effect s:steps)s.finger=true;r.xrayShaders++;}if(scriptedFx)for(SceneEffects.Effect step:steps){step.scriptedVisible="fx."+effect.optInt("id",-1)+".visible";step.scriptOff=!visible(effect);}
+       if(effectWhen!=null){for(SceneEffects.Effect step:steps)step.when=effectWhen;offer(effectWhen.getJSONArray(0).optString(0),new JSONObject().put("kind","effect"),projectProperties,r);}for(SceneEffects.Effect step:steps){for(String property:step.bound.values())offer(property,new JSONObject().put("kind","uniform"),projectProperties,r);
+       for(java.util.Iterator<java.util.Map.Entry<Integer,String>> it=step.userTextures.entrySet().iterator();it.hasNext();){java.util.Map.Entry<Integer,String> t=it.next();String p=declared(t.getValue(),projectProperties);if(p==null)it.remove();else offer(p,new JSONObject().put("kind","texture"),projectProperties,r);}}r.keep(name);if(steps.size()>1)r.multiPass++;}
       catch(InterruptedIOException stop){throw stop;}catch(Exception|OutOfMemoryError failure){r.drop(name,failure.getMessage()==null?"无法读取":failure.getMessage());}
      }
      layer.bitmap=bitmap;bitmap=null;pixels+=(long)layer.bitmap.getWidth()*layer.bitmap.getHeight();if(o.has("id"))outputIndex.put(o.optInt("id"),r.scene.layers.size());r.scene.layers.add(layer);if(layer.frames.size()>1)r.animations++;
@@ -288,7 +345,30 @@ final class SceneAdapter {
   if(smaller!=bitmap)bitmap.recycle();return smaller;
  }
  static final String GROUP_LAYER="合成层只用于分组，其中的图层照常显示";
+ /**
+  * First frame of a layer video, decoded by Android's retriever; where it cannot be decoded (no codec, host checks) a
+  * transparent placeholder with the layer's proportions, replaced by real frames once the layer plays.
+  */
+ static Bitmap videoPoster(byte[] mp4,float w,float h){
+  try(android.media.MediaMetadataRetriever m=new android.media.MediaMetadataRetriever()){
+   m.setDataSource(new android.media.MediaDataSource(){
+    @Override public int readAt(long position,byte[] buffer,int offset,int size){if(position>=mp4.length)return -1;int n=(int)Math.min(size,mp4.length-position);System.arraycopy(mp4,(int)position,buffer,offset,n);return n;}
+    @Override public long getSize(){return mp4.length;}
+    @Override public void close(){}
+   });
+   android.media.MediaMetadataRetriever.BitmapParams params=new android.media.MediaMetadataRetriever.BitmapParams();params.setPreferredConfig(Bitmap.Config.ARGB_8888);
+   Bitmap frame=m.getFrameAtTime(0,android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC,params);
+   if(frame!=null&&frame.getWidth()>0&&frame.getHeight()>0){if(frame.getConfig()==Bitmap.Config.ARGB_8888)return frame;Bitmap copy=frame.copy(Bitmap.Config.ARGB_8888,false);frame.recycle();if(copy!=null)return copy;}
+  }catch(Exception|LinkageError unavailable){}
+  float k=Math.min(1,64f/Math.max(1,Math.max(w,h)));
+  return Bitmap.createBitmap(Math.max(1,Math.round(Math.max(1,w)*k)),Math.max(1,Math.round(Math.max(1,h)*k)),Bitmap.Config.ARGB_8888);
+ }
  /** Engine solid-colour layer: a flat rectangle in the object's colour; effects on it run as on any image. */
+ /** Transparent base of a shape object, at most 1024 px on its long side so its effects keep their detail. */
+ static Bitmap clearBitmap(JSONObject o){
+  float[] size=WallpaperContent.vector(o.opt("size"),1024,1024);float w=Math.max(1,size.length>0?size[0]:1024),h=Math.max(1,size.length>1?size[1]:1024),k=Math.min(1,1024f/Math.max(w,h));
+  return Bitmap.createBitmap(Math.max(1,Math.round(w*k)),Math.max(1,Math.round(h*k)),Bitmap.Config.ARGB_8888);
+ }
  static Bitmap solidBitmap(JSONObject o){
   float[] size=WallpaperContent.vector(o.opt("size"),256,256),color={1,1,1};
   float w=Math.max(1,size.length>0?size[0]:256),h=Math.max(1,size.length>1?size[1]:256),k=Math.min(1,256f/Math.max(w,h));
@@ -393,7 +473,14 @@ final class SceneAdapter {
   * drives on the phone. Script parameters count only for objects the phone draws; text notes and shortcuts are left out.
   */
  static JSONObject offered(Report report)throws JSONException {
-  java.util.Set<Integer> drawn=new java.util.HashSet<>();for(WallpaperContent.Layer l:report.scene.layers)drawn.add(l.objectId);
+  // Script parameters count when their object is drawn or is a parent of a drawn layer (scripts move the children too).
+  java.util.Set<Integer> drawn=new java.util.HashSet<>();for(WallpaperContent.Layer l:report.scene.layers)for(Integer id=l.objectId,d=0;id!=null&&d<33&&drawn.add(id);d++)id=report.parentOf.get(id);
+  // The scene camera follows its object's scripts (camera position sliders), so its parameters count too.
+  if(report.cameraObject!=null&&report.cameraObject.has("id"))drawn.add(report.cameraObject.optInt("id"));
+  // Settings other settings' display conditions refer to ("calendar.value == true"): they open sections of the panel.
+  java.util.Set<String> reveal=new java.util.HashSet<>();
+  for(java.util.Iterator<String> k=report.declared.keys();k.hasNext();){JSONObject p=report.declared.optJSONObject(k.next());if(p==null)continue;
+   java.util.regex.Matcher m=java.util.regex.Pattern.compile("([A-Za-z_][\\w]*)\\.value").matcher(p.optString("condition",""));while(m.find())reveal.add(m.group(1));}
   JSONObject out=new JSONObject();
   for(java.util.Iterator<String> k=report.declared.keys();k.hasNext();){
    String name=k.next();JSONObject p=report.declared.optJSONObject(name);if(p==null)continue;String type=p.optString("type");
@@ -406,8 +493,12 @@ final class SceneAdapter {
    if(type.equals("combo")){JSONArray options=new JSONArray();JSONArray list=p.optJSONArray("options");if(list!=null)for(int i=0;i<list.length();i++){JSONObject op=list.optJSONObject(i);if(op!=null)options.put(new JSONArray().put(label(op.optString("label"))).put(String.valueOf(op.opt("value"))));}o.put("options",options);}
    if(type.equals("slider")){double min=p.optDouble("min",0),max=p.optDouble("max",1);if(!(max>min))continue;o.put("min",min).put("max",max);}
    JSONArray kept=new JSONArray();JSONObject drives=report.properties.optJSONObject(name);JSONArray targets=drives==null?null:drives.optJSONArray("targets");
-   if(targets!=null)for(int i=0;i<targets.length();i++){JSONObject t=targets.getJSONObject(i);if(!t.optString("kind").equals("parameter")||drawn.contains(t.optInt("object",-2)))kept.put(t);}
-   o.put("targets",kept).put("effective",kept.length()>0);out.put(name,o);
+   if(targets!=null)for(int i=0;i<targets.length();i++){JSONObject t=targets.getJSONObject(i);if(!t.optString("kind").equals("parameter")||drawn.contains(t.optInt("object",-2))||report.reachingScripts.contains(t.optInt("object",-2)))kept.put(t);}
+   // Settings nothing in the scene or its scripts refers to change nothing on the PC either: not a phone limitation.
+   boolean unused=kept.length()==0&&!report.sceneText.contains("\""+name+"\"")&&!report.scriptSources.contains(name);
+   if(unused)o.put("unused",true);
+   if(kept.length()==0&&!unused&&reveal.contains(name))kept.put(new JSONObject().put("kind","panel"));
+   o.put("targets",kept).put("effective",kept.length()>0||unused);out.put(name,o);
   }
   return out;
  }
@@ -492,6 +583,21 @@ final class SceneAdapter {
  }
  /** True when a script can show this hidden layer: its own visibility is scripted, or a script names it. */
  private static final java.util.regex.Pattern SELF_VISIBLE=java.util.regex.Pattern.compile("thisLayer\\s*\\.\\s*visible\\s*=[^=]");
+ /** Name prefixes scripts build layer names from: `Launcher ${i + 1}` or 'Launcher ' + i. */
+ private static final java.util.regex.Pattern NAME_TEMPLATE=java.util.regex.Pattern.compile("`([^`$\\n]{2,60})\\$\\{|[\"']([^\"'\\n]{2,60})[\"']\\s*\\+\\s*[A-Za-z_(]");
+ static boolean scriptedVisibility(JSONObject o,String sources,java.util.Map<Integer,JSONObject> byId){
+  if(scriptedVisibility(o,sources))return true;
+  String name=o.optString("name","");
+  if(!name.isEmpty()){java.util.regex.Matcher m=NAME_TEMPLATE.matcher(sources);
+   while(m.find()){String prefix=m.group(1)!=null?m.group(1):m.group(2);if(name.startsWith(prefix)&&name.length()>prefix.length()&&name.substring(prefix.length()).matches("\\d{1,4}"))return true;}}
+  // A parent whose script walks its children (getChildren) and sets their visibility.
+  JSONObject cur=o;
+  for(int d=0;d<16&&cur!=null&&cur.has("parent")&&!cur.isNull("parent");d++){
+   cur=byId.get((int)number(cur.opt("parent"),-1));if(cur==null)break;
+   for(java.util.Iterator<String> k=cur.keys();k.hasNext();){Object p=cur.opt(k.next());if(p instanceof JSONObject j&&j.opt("script") instanceof String src&&src.contains("getChildren")&&src.contains(".visible"))return true;}
+  }
+  return false;
+ }
  static boolean scriptedVisibility(JSONObject o,String sources){
   Object v=o.opt("visible");if(v instanceof JSONObject&&((JSONObject)v).opt("script") instanceof String)return true;
   // A property script of the layer itself that sets thisLayer.visible (e.g. day/night switches on a hidden layer).
@@ -511,6 +617,7 @@ final class SceneAdapter {
    if(o.has("text")&&!o.isNull("text")){Object tv=value(o.opt("text"));d.put("text",tv==null||tv==JSONObject.NULL?"":String.valueOf(tv)).put("pointsize",number(o.opt("pointsize"),32)).put("color",array(WallpaperContent.vector(o.opt("color"),1,1,1)));
     for(String k:new String[]{"font","horizontalalign","verticalalign","anchor"})d.put(k,o.optString(k,""));d.put("padding",number(o.opt("padding"),0)).put("maxrows",number(o.opt("maxrows"),1)).put("maxwidth",number(o.opt("maxwidth"),500));}
    if(!o.optString("attachment","").isEmpty())d.put("attachment",o.optString("attachment"));
+   JSONObject boundFields=new JSONObject();for(String f:new String[]{"text","pointsize","color","alpha"}){String p=declared(bound(o.opt(f)),projectProperties);if(p!=null)boundFields.put(f,p);}if(boundFields.length()>0)d.put("bound",boundFields);
    if(o.has("camera")){d.put("zoom",number(o.opt("zoom"),1)).put("fov",number(o.opt("fov"),50));}
    d.put("kind",o.has("camera")?"camera":o.has("particle")&&!o.isNull("particle")?"particle":o.has("text")&&!o.isNull("text")?"text":o.has("sound")&&!o.isNull("sound")?"sound":o.has("image")&&!o.isNull("image")?"image":"other");
    JSONObject scripts=new JSONObject();
@@ -519,11 +626,26 @@ final class SceneAdapter {
     if(!(source instanceof String)||((String)source).isBlank())continue;
     JSONObject properties=((JSONObject)v).optJSONObject("scriptproperties");
     String text=(String)source;
+    if(text.contains("shared.")||text.contains("getLayer")||text.contains("enumerateLayers")||text.contains("getChildren"))report.reachingScripts.add(o.optInt("id",-1));
     if(text.contains("userProperties")||text.contains("applyUserProperties"))for(java.util.Iterator<String> names=projectProperties.keys();names.hasNext();){
      String n=names.next();if(n.length()<3)continue;String q=java.util.regex.Pattern.quote(n);
      if(java.util.regex.Pattern.compile("\\."+q+"\\b|\\[\\s*['\"]"+q+"['\"]\\s*\\]").matcher(text).find())offer(n,new JSONObject().put("kind","parameter").put("object",o.optInt("id",-1)),projectProperties,report);
     }
     if(properties!=null)for(java.util.Iterator<String> pk=properties.keys();pk.hasNext();)offer(bound(properties.opt(pk.next())),new JSONObject().put("kind","parameter").put("object",o.optInt("id",-1)),projectProperties,report);scripts.put(key,new JSONObject().put("source",source).put("properties",properties==null?new JSONObject():properties));sources.append(source).append('\n');
+   }
+   // Scripts on effect values (constantshadervalues) and on effect visibility: "fx.<effect id>.<pass>.<name>" / "fx.<effect id>.visible".
+   JSONArray fxList=o.optJSONArray("effects");
+   if(fxList!=null)for(int f=0;f<fxList.length();f++){JSONObject ef=fxList.optJSONObject(f);if(ef==null)continue;int fid=ef.optInt("id",-1);
+    java.util.LinkedHashMap<String,JSONObject> found=new java.util.LinkedHashMap<>();
+    if(ef.opt("visible") instanceof JSONObject vj&&vj.opt("script") instanceof String)found.put("fx."+fid+".visible",vj);
+    JSONArray ps=ef.optJSONArray("passes");
+    if(ps!=null)for(int pi=0;pi<ps.length();pi++){JSONObject pass=ps.optJSONObject(pi);JSONObject c=pass==null?null:pass.optJSONObject("constantshadervalues");if(c==null)continue;
+     for(java.util.Iterator<String> ck=c.keys();ck.hasNext();){String cn=ck.next();if(c.opt(cn) instanceof JSONObject cj&&cj.opt("script") instanceof String)found.put("fx."+fid+"."+pi+"."+cn,cj);}}
+    for(java.util.Map.Entry<String,JSONObject> item:found.entrySet()){
+     String text=item.getValue().getString("script");if(text.isBlank())continue;JSONObject props=item.getValue().optJSONObject("scriptproperties");
+     if(props!=null)for(java.util.Iterator<String> pk=props.keys();pk.hasNext();)offer(bound(props.opt(pk.next())),new JSONObject().put("kind","parameter").put("object",o.optInt("id",-1)),projectProperties,report);
+     scripts.put(item.getKey(),new JSONObject().put("source",text).put("properties",props==null?new JSONObject():props).put("value",item.getValue().opt("value")));sources.append(text).append((char)10);
+    }
    }
    if(scripts.length()>0)d.put("scripts",scripts);list.put(d);
   }
@@ -581,12 +703,19 @@ final class SceneAdapter {
   JSONObject root=new JSONObject().put("format","WallpaperMobileScene/1").put("width",report.scene.width).put("height",report.scene.height).put("adapted",true).put("adaptation",report.describe());
   JSONObject effects=EffectOptions.normalize(null);effects.put("gyro",true);effects.put("touch",true);camera(report,effects);root.put("effects",effects);JSONObject cameraBlock=cameraBlock(report);if(cameraBlock!=null)root.put("camera",cameraBlock);JSONObject bloomBlock=bloomBlock(report,report.declared);if(bloomBlock!=null)root.put("bloom",bloomBlock);JSONObject offered=offered(report);if(offered.length()>0)root.put("properties",offered);JSONArray layers=new JSONArray();
   boolean done=false;try{
-   try(ZipOutputStream zip=new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(target)))){java.util.IdentityHashMap<byte[],String> fontFiles=new java.util.IdentityHashMap<>();int index=0;for(WallpaperContent.Layer l:report.scene.layers){if(Thread.currentThread().isInterrupted())throw new InterruptedIOException("适配已暂停");String name="layers/"+(index++)+".png";zip.putNextEntry(new ZipEntry(name));if(!l.bitmap.compress(Bitmap.CompressFormat.PNG,100,zip))throw new IOException("无法保存图层");zip.closeEntry();JSONObject layer=new JSONObject().put("file",name).put("name",l.name).put("x",l.x).put("y",l.y).put("width",l.w).put("height",l.h).put("rotation",l.rotation).put("depth",l.depth).put("opacity",l.alpha);if(l.frames.size()>1){JSONArray frames=new JSONArray();for(var f:l.frames)frames.put(new JSONArray().put(f.u0()).put(f.v0()).put(f.u1()).put(f.v1()).put(f.seconds()));layer.put("frames",frames);}if(!l.effects.isEmpty())writeEffects(zip,l,index-1,layer);
+   Counting counted=new Counting(new BufferedOutputStream(new FileOutputStream(target)));
+   try(ZipOutputStream zip=new ZipOutputStream(counted)){java.util.IdentityHashMap<byte[],String> fontFiles=new java.util.IdentityHashMap<>();int index=0;for(WallpaperContent.Layer l:report.scene.layers){if(Thread.currentThread().isInterrupted())throw new InterruptedIOException("适配已暂停");String name="layers/"+(index++)+".png";zip.putNextEntry(new ZipEntry(name));if(!l.bitmap.compress(Bitmap.CompressFormat.PNG,100,zip))throw new IOException("无法保存图层");zip.closeEntry();JSONObject layer=new JSONObject().put("file",name).put("name",l.name).put("x",l.x).put("y",l.y).put("width",l.w).put("height",l.h).put("rotation",l.rotation).put("depth",l.depth).put("opacity",l.alpha);if(l.frames.size()>1){JSONArray frames=new JSONArray();for(var f:l.frames)frames.put(new JSONArray().put(f.u0()).put(f.v0()).put(f.u1()).put(f.v1()).put(f.seconds()));layer.put("frames",frames);}if(!l.effects.isEmpty())writeEffects(zip,l,index-1,layer);
     if(l.puppet!=null){String mdl="layers/"+(index-1)+".mdl";zip.putNextEntry(new ZipEntry(mdl));zip.write(l.puppetData);zip.closeEntry();layer.put("puppet",mdl).put("puppetSize",new JSONArray().put(l.puppetW).put(l.puppetH));
      JSONArray tracks=new JSONArray();for(var t:l.tracks)tracks.put(new JSONArray().put(t.animation()).put(t.rate()).put(t.blend()).put(t.additive()));if(tracks.length()>0)layer.put("tracks",tracks);}
+    if(l.videoData!=null){
+     // Stored uncompressed so the phone's player reads it in place (WallpaperContent.storedRange); MP4 does not deflate anyway.
+     String video="layers/"+(index-1)+".mp4";ZipEntry entry=new ZipEntry(video);entry.setMethod(ZipEntry.STORED);entry.setSize(l.videoData.length);entry.setCompressedSize(l.videoData.length);
+     java.util.zip.CRC32 crc=new java.util.zip.CRC32();crc.update(l.videoData);entry.setCrc(crc.getValue());
+     long header=counted.count;zip.putNextEntry(entry);zip.write(l.videoData);zip.closeEntry();layer.put("videoFile",video).put("videoHeader",header);
+    }
     if(l.particleData!=null){String file="layers/"+(index-1)+"-particles.json";zip.putNextEntry(new ZipEntry(file));zip.write(l.particleData.getBytes(StandardCharsets.UTF_8));zip.closeEntry();layer.put("particlesFile",file);}
     layer.put("objectId",l.objectId).put("base",new JSONArray().put(l.baseW).put(l.baseH));if(!l.visible)layer.put("visible",false);if(l.frame!=null)layer.put("frame",array(l.frame));
-    if(l.tint[0]!=1||l.tint[1]!=1||l.tint[2]!=1)layer.put("tint",array(l.tint));if(l.tintProperty!=null)layer.put("tintProperty",l.tintProperty);
+    if(l.tint[0]!=1||l.tint[1]!=1||l.tint[2]!=1)layer.put("tint",array(l.tint));if(l.tintProperty!=null)layer.put("tintProperty",l.tintProperty);if(l.textureProperty!=null)layer.put("textureProperty",l.textureProperty);if(l.shape!=null)layer.put("shape",array(l.shape));
     if(l.chain!=null){JSONArray chain=new JSONArray();for(int c=0;c<l.chain.length;c++){JSONArray b=new JSONArray();for(String n:l.chainBind[c])b.put(n==null?JSONObject.NULL:n);chain.put(new JSONArray().put(array(l.chain[c])).put(b));}layer.put("chain",chain);}
     if(l.when!=null&&l.when.length()>0)layer.put("when",l.when);
     if(l.alphaProperty!=null)layer.put("alphaProperty",l.alphaProperty);
@@ -594,12 +723,17 @@ final class SceneAdapter {
      l.text.density=l.text.blockW>0?l.bitmap.getWidth()/l.text.blockW:1;layer.put("textLayer",l.text.json());if(l.fontName!=null)layer.put("fontName",l.fontName);
      if(l.fontData!=null){String file=fontFiles.get(l.fontData);if(file==null){file="layers/"+(index-1)+"-font";zip.putNextEntry(new ZipEntry(file));zip.write(l.fontData);zip.closeEntry();fontFiles.put(l.fontData,file);}layer.put("fontFile",file);}
     }
-    if(l.compose)layer.put("compose",true);if(l.fullscreen)layer.put("fullscreen",true);if(l.group>=0)layer.put("group",l.group);
+    if(l.compose)layer.put("compose",true);if(l.fullscreen)layer.put("fullscreen",true);if(l.bounded)layer.put("bounded",true);if(l.sourceOnly)layer.put("source",true);if(l.group>=0)layer.put("group",l.group);
     if(l.blend!=0)layer.put("blend",l.blend);if(l.additive)layer.put("additive",true);
     if(l.attachParent>=0)layer.put("attach",new JSONObject().put("layer",l.attachParent).put("name",l.attachName).put("x",l.attachX).put("y",l.attachY).put("angle",l.attachAngle));if(l.reveal!=null){String reveal="layers/xray-"+index+".png";zip.putNextEntry(new ZipEntry(reveal));if(!l.reveal.compress(Bitmap.CompressFormat.PNG,100,zip))throw new IOException("无法保存 X-ray 图层");zip.closeEntry();layer.put("xrayFile",reveal).put("xraySize",l.revealSize);}layers.put(layer);}root.put("layers",layers);if(report.scriptScene!=null){zip.putNextEntry(new ZipEntry("scripts.json"));zip.write(report.scriptScene.toString().getBytes(StandardCharsets.UTF_8));zip.closeEntry();root.put("scripts","scripts.json");}zip.putNextEntry(new ZipEntry("wallpaper-mobile.json"));zip.write(root.toString().getBytes(StandardCharsets.UTF_8));zip.closeEntry();}
-   try(WallpaperContent.Scene verify=WallpaperContent.scene(target)){if(verify.layers.size()!=layers.length())throw new IOException("适配版校验未通过");}done=true;
+   try(WallpaperContent.Scene verify=WallpaperContent.scene(target)){if(verify.layers.size()!=layers.length())throw new IOException("适配版校验未通过");
+    for(int k=0;k<verify.layers.size();k++)if(report.scene.layers.get(k).videoData!=null&&verify.layers.get(k).video==null)throw new IOException("图层视频校验未通过");}done=true;
   }finally{if(!done)target.delete();}
  }
+ /** Bytes written so far: the offset of the next zip entry's local header once the previous entry is closed. */
+ private static final class Counting extends FilterOutputStream {long count;Counting(OutputStream out){super(out);}
+  @Override public void write(int b)throws IOException{out.write(b);count++;}
+  @Override public void write(byte[] b,int off,int len)throws IOException{out.write(b,off,len);count+=len;}}
  private static void writeEffects(ZipOutputStream zip,WallpaperContent.Layer l,int index,JSONObject layer)throws Exception {
   JSONArray list=new JSONArray();int number=0;
   for(SceneEffects.Effect effect:l.effects){

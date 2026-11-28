@@ -14,13 +14,22 @@ final class ScenePainter {
  private static void paint(Canvas c,WallpaperContent.Scene scene,Paint p,JSONObject options,EffectMotion.Frame frame,float pointerX,float pointerY,boolean down,double seconds,int i){
   WallpaperContent.Layer l=scene.layers.get(i);if(!l.shown(options,scene.properties))return;
   if(l.compose){int alpha=(int)(EffectMotion.clamp(l.opacity(options)*(float)options.optDouble("opacity"+i,1),0,1)*255);int saved=c.saveLayerAlpha(null,alpha);
+   if(l.bounded){
+    // Wallpaper Engine renders a composition layer at its size: children outside its rectangle are cut off.
+    float dx=(float)options.optDouble("layerX"+i,0)*scene.width,dy=(float)options.optDouble("layerY"+i,0)*scene.height,depth=(float)options.optDouble("depth"+i,l.depth)*(float)options.optDouble("layerDepth",1);
+    if(frame!=null){dx+=frame.x()*scene.width*.5f*depth;dy+=frame.y()*scene.height*.5f*depth;}
+    float cx=l.x+l.w/2,cy=l.y+l.h/2;Matrix m=new Matrix();m.setTranslate(dx,dy);m.preRotate(l.rotation,cx,cy);
+    if(l.shape!=null){Matrix s=new Matrix();s.setValues(new float[]{l.shape[0],l.shape[1],0,l.shape[2],l.shape[3],0,0,0,1});m.preTranslate(cx,cy);m.preConcat(s);m.preTranslate(-cx,-cy);}
+    Path clip=new Path();clip.addRect(l.x,l.y,l.x+l.w,l.y+l.h,Path.Direction.CW);clip.transform(m);c.clipPath(clip);
+   }
    for(int j=i+1;j<scene.layers.size();j++)if(scene.layers.get(j).group==i)paint(c,scene,p,options,frame,pointerX,pointerY,down,seconds,j);
    c.restoreToCount(saved);return;}
   c.save();
    float dx=(float)options.optDouble("layerX"+i,0)*scene.width,dy=(float)options.optDouble("layerY"+i,0)*scene.height;
    float depth=(float)options.optDouble("depth"+i,l.depth)*(float)options.optDouble("layerDepth",1);
    if(frame!=null){dx+=frame.x()*scene.width*.5f*depth;dy+=frame.y()*scene.height*.5f*depth;}
-   c.translate(dx,dy);c.rotate(l.rotation,l.x+l.w/2,l.y+l.h/2);p.setAlpha((int)(l.opacity(options)*options.optDouble("opacity"+i,1)*255));
+   c.translate(dx,dy);c.rotate(l.rotation,l.x+l.w/2,l.y+l.h/2);
+   if(l.shape!=null){android.graphics.Matrix m=new android.graphics.Matrix();m.setValues(new float[]{l.shape[0],l.shape[1],0,l.shape[2],l.shape[3],0,0,0,1});float cx=l.x+l.w/2,cy=l.y+l.h/2;c.translate(cx,cy);c.concat(m);c.translate(-cx,-cy);}p.setAlpha((int)(l.opacity(options)*options.optDouble("opacity"+i,1)*255));
    RectF target=new RectF(l.x,l.y,l.x+l.w,l.y+l.h);ColorFilter savedFilter=p.getColorFilter();if(l.tint[0]!=1||l.tint[1]!=1||l.tint[2]!=1)p.setColorFilter(tinted(savedFilter,l.tint));p.setBlendMode(l.additive?BlendMode.PLUS:blendMode(l.blend));
    if(l.particles!=null&&l.bitmap!=null)particles(c,scene,l,p);
    else if(l.bitmap!=null&&l.meshPoints!=null)mesh(c,l,p,seconds);

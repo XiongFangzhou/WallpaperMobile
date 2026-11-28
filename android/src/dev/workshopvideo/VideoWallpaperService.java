@@ -44,7 +44,15 @@ public final class VideoWallpaperService extends WallpaperService {
             if(isPreview())return preview;
             return WallpaperStore.engineConfiguration(VideoWallpaperService.this,screen(),false);
         }
-        private void checkConfiguration(){JSONObject next=configuration();if(current==null||!next.optString("file").equals(current.optString("file"))||next.optBoolean("fit")!=current.optBoolean("fit")||next.optBoolean("pan")!=current.optBoolean("pan")||!String.valueOf(next.optJSONObject("effects")).equals(String.valueOf(current.optJSONObject("effects")))){retries=0;start();}}
+        private void checkConfiguration(){JSONObject next=configuration();boolean sameContent=current!=null&&next.optString("file").equals(current.optString("file"))&&next.optBoolean("fit")==current.optBoolean("fit")&&next.optBoolean("pan")==current.optBoolean("pan");
+            if(sameContent&&String.valueOf(next.optJSONObject("effects")).equals(String.valueOf(current.optJSONObject("effects"))))return;
+            // Only author settings changed (live edits from the setup screen): update the running renderer in place.
+            if(sameContent&&renderer!=null&&onlyAuthorSettings(current.optJSONObject("effects"),next.optJSONObject("effects"))){current=next;renderer.configure(next);return;}
+            retries=0;start();}
+        private boolean onlyAuthorSettings(JSONObject a,JSONObject b){
+            if(a==null||b==null)return false;java.util.Set<String> keys=new java.util.HashSet<>();for(java.util.Iterator<String> k=a.keys();k.hasNext();)keys.add(k.next());for(java.util.Iterator<String> k=b.keys();k.hasNext();)keys.add(k.next());
+            for(String k:keys)if(!k.startsWith("user.")&&!String.valueOf(a.opt(k)).equals(String.valueOf(b.opt(k))))return false;return true;
+        }
         private void start(){
             if(!surfaceReady||destroyed||!getSurfaceHolder().getSurface().isValid())return;
             main.removeCallbacks(recover);int attempt=++generation,renderScreen=screen();JSONObject config=configuration();current=config;boolean previewEngine=isPreview();

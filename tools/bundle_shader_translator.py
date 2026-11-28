@@ -25,7 +25,32 @@ globalThis.weTranslateShader = function (requestJson) {
     if (Object.prototype.hasOwnProperty.call(headers, name)) return headers[name];
     return null;
   };
-  const translate = __modules['hlsl2glsl'].hlsl2glsl;
+  const hlsl = __modules['hlsl2glsl'].hlsl2glsl;
+  // Wallpaper Engine accepts uniforms declared after an #include that uses them (e.g. common_blur.h reads
+  // g_Texture0); GLSL needs the declaration first. Unconditional uniforms move above the first include.
+  const hoistUniforms = (source) => {
+    if (typeof source !== 'string') return source;
+    const lines = source.replace(/\r\n/g, '\n').split('\n'), kept = [], moved = [];
+    let depth = 0, include = -1;
+    for (const line of lines) {
+      const t = line.trim();
+      if (/^#\s*if/.test(t)) depth++;
+      else if (/^#\s*endif/.test(t)) depth = Math.max(0, depth - 1);
+      if (include < 0 && depth === 0 && /^#\s*include\b/.test(t)) include = kept.length;
+      if (include >= 0 && depth === 0 && /^uniform\s[^;]*;/.test(t)) { moved.push(line); continue; }
+      kept.push(line);
+    }
+    if (!moved.length) return source;
+    kept.splice(include, 0, ...moved);
+    return kept.join('\n');
+  };
+  // GLSL's % takes integers only, so any % left in the output has integer operands; the translator can still
+  // wrap an int() operand in float() (i % int(4) -> i % float(int(4))), which no GLSL compiler accepts.
+  const INT = '(int\\((?:[^()]|\\([^()]*\\))*\\))';
+  const fixModulo = (glsl) => typeof glsl !== 'string' ? glsl : glsl
+    .replace(new RegExp('%(\\s*)float\\(\\s*' + INT + '\\s*\\)', 'g'), '%$1$2')
+    .replace(new RegExp('float\\(\\s*' + INT + '\\s*\\)(\\s*)%', 'g'), '$1$2%');
+  const translate = (source, stage, combos, include, other) => fixModulo(hlsl(hoistUniforms(source), stage, combos, include, hoistUniforms(other)));
   const combos = request.combos || {};
   return JSON.stringify({
     vertex: translate(request.vertex, 'vert', combos, resolve, request.fragment),

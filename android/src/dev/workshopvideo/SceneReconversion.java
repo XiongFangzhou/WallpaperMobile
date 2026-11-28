@@ -60,7 +60,9 @@ final class SceneReconversion {
             String sha1=VideoFiles.hex(WorkshopDownload.hash(stage,"SHA-1"));long size=stage.length();
             synchronized(app){
                 JSONObject record=app.job(id);if(!record.optString("state").equals("saved")||app.enqueued.contains(id))return;
+                String liveKey=WallpaperStore.sourceKey(app.video(id));
                 Files.move(stage.toPath(),app.video(id).toPath(),StandardCopyOption.REPLACE_EXISTING);stage=null;
+                if(WallpaperStore.replaceSource(app,liveKey,app.video(id)))android.util.Log.i("SceneReconversion","live wallpaper updated "+id);
                 boolean sameKind=record.optString("kind").equals(prepared.kind());
                 VideoApp.put(record,"kind",prepared.kind());VideoApp.put(record,"adapted",prepared.adapted());VideoApp.put(record,"adaptationReport",prepared.report());
                 VideoApp.put(record,"effects",sameKind?merge(prepared.effects(),record.optJSONObject("effects")):prepared.effects());

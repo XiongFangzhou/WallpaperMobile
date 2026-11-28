@@ -31,9 +31,17 @@ quad = (F * 8)(0, 0, 1, 0, 0, 1, 1, 1)
 point = runtime['attribute'](program, b'point')
 runtime['enable'](point)
 runtime['pointer'](point, 2, 0x1406, 0, 8, quad)
+# The layer shader also samples through texcoord/region (sprite frames, skeletal UVs) and multiplies by the layer tint;
+# rectangles use texcoord = point, the full region and a white tint.
+texcoord = runtime['attribute'](program, b'texcoord')
+runtime['enable'](texcoord)
+runtime['pointer'](texcoord, 2, 0x1406, 0, 8, quad)
 enable(0x0BE2)
 blend(1, 0x0303)
 runtime['ui'](uniform('image'), 0)
+runtime['u4'](uniform('region'), 0, 0, 1, 1)
+u3(uniform('tint'), 1, 1, 1)
+runtime['u1'](uniform('straight'), 0)
 textures = []
 for entry in cases[0]['textures']:
     texture = U()
@@ -73,5 +81,10 @@ for case in cases:
             differing += max(errors) > 8
             total_error += sum(errors)
     assert differing < w * h * .05, (case['page'], case['reveal'], case['colored'], differing, total_error / (w * h * 3))
+# Layer videos copy decoder frames (external OES texture) into a 2D texture with their own program.
+video_source = (root / 'android/src/dev/workshopvideo/SceneVideo.java').read_text(encoding='utf-8')
+video_codes = [json.loads('"' + re.search(r'String ' + name + r'="((?:[^"\\]|\\.)*)"', video_source).group(1) + '"') for name in ('VERTEX', 'FRAGMENT')]
+video_result = runtime['probe'](video_codes)
+assert video_result['linked'], video_result
 assert runtime['glError']() == 0
-print(f'PASS: {len(cases)} production layer-shader frames match Android native Canvas: paging, parallax, rotation, color, alpha and X-ray; desktop ANGLE, not phone FPS')
+print(f'PASS: {len(cases)} production layer-shader frames match Android native Canvas: paging, parallax, rotation, color, alpha and X-ray; layer-video copy shader links; desktop ANGLE, not phone FPS')

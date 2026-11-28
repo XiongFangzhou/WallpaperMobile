@@ -28,6 +28,18 @@ final class SceneEffects {
         int group;String target;final Map<Integer,String> bind=new HashMap<>();JSONArray fbos;boolean copy;
         /** Uniforms bound to author properties (uniform → property); the phone setting replaces their value. */
         final Map<String,String> bound=new HashMap<>();
+        /** Texture slots bound to scenetexture author properties (passes[].usertextures): a picture chosen on the phone
+         *  replaces the slot; originals keeps what the slot held before. */
+        final Map<Integer,String> userTextures=new HashMap<>();final Map<Integer,Object> originals=new HashMap<>();
+        /** Uniforms computed by scripts (key "fx.<effect id>.<pass>.<material name>" → uniform), and the script key of the
+         *  effect's visibility; scriptOff is that script's last answer. */
+        final Map<String,String> scripted=new HashMap<>();String scriptedVisible;boolean scriptOff;
+        /** Off by an author switch or by its visibility script. */
+        boolean disabled(){return off||scriptOff;}
+        /** Follows the finger only (X-ray run from its own shader): without a touch its pointer is off the screen, as a phone has no hover. */
+        boolean finger;
+        /** Texture slots whose image clamps at its edges (TEX ClampUVs); the others repeat, as in Wallpaper Engine. */
+        final Set<Integer> clamped=new TreeSet<>();
         /** Author-property switch for the whole effect [[name, condition or null]]; off when it does not hold. */
         JSONArray when;boolean off;
         // Runtime state owned by SceneGpu on its GL thread.
@@ -37,9 +49,15 @@ final class SceneEffects {
     }
 
     /** Engine textures that never ship in packages; SceneGpu synthesizes them. */
-    static final Set<String> ENGINE_TEXTURES=Set.of("util/white","util/black","util/noise","util/noflow","util/clouds_256");
+    static final Set<String> ENGINE_TEXTURES=Set.of("util/white","util/black","util/noise","util/noflow","util/clouds_256","particle/halo_6");
     private static final Pattern ANNOTATED=Pattern.compile("uniform\\s+(\\w+)\\s+(\\w+)\\s*;\\s*//\\s*(\\{[^\\n]*\\})");
     private static final Pattern TEXTURE_SLOT=Pattern.compile("g_Texture(\\d+)");
+    /** Another layer's result (Wallpaper Engine's per-layer composite buffer), named by that layer's object id. */
+    private static final Pattern COMPOSITE=Pattern.compile("_rt_imageLayerComposite_(\\d+)_a");
+    /** Object id named by a layer-composite buffer, else -1. */
+    static int compositeId(String name){if(name==null)return -1;Matcher m=COMPOSITE.matcher(name);if(!m.matches())return -1;try{return Integer.parseInt(m.group(1));}catch(NumberFormatException e){return -1;}}
+    /** Object ids an effect instance names as layer composites (its texture overrides). */
+    static Set<Integer> composites(JSONObject instance){Set<Integer> ids=new TreeSet<>();Matcher m=COMPOSITE.matcher(instance.toString());while(m.find())try{ids.add(Integer.parseInt(m.group(1)));}catch(NumberFormatException ignored){}return ids;}
     private static final int MAX_EDGE=1024,MAX_SLOTS=8;
 
     static String kind(JSONObject instance){return instance.optString("file").replace("effects/","").replace("/effect.json","");}
@@ -70,11 +88,11 @@ final class SceneEffects {
         try{
             for(int i=0;i<passes.length();i++){
                 JSONObject pass=passes.getJSONObject(i);
-                if(pass.has("conditions")||pass.has("compose"))throw new IOException("带条件或合成的特效步骤尚不支持");
+                if(pass.has("conditions"))throw new IOException("带条件的特效步骤尚不支持");
                 String target=pass.optString("target","");if(!target.isEmpty()&&!declared.containsKey(target))throw new IOException("特效依赖整幅画面 "+target);
                 Map<Integer,String> bind=new HashMap<>();JSONArray binds=pass.optJSONArray("bind");
                 if(binds!=null)for(int k=0;k<binds.length();k++){JSONObject b=binds.getJSONObject(k);String name=b.optString("name");int index=b.optInt("index",-1);
-                    if(index<0||index>=MAX_SLOTS)throw new IOException("特效绑定槽位无效");if(!name.equals("previous")&&!declared.containsKey(name))throw new IOException("特效依赖整幅画面 "+name);bind.put(index,name);}
+                    if(index<0||index>=MAX_SLOTS)throw new IOException("特效绑定槽位无效");if(!name.equals("previous")&&!declared.containsKey(name)&&compositeId(name)<0)throw new IOException("特效依赖整幅画面 "+name);bind.put(index,name);}
                 Effect step;
                 if(pass.has("command")){
                     if(!pass.optString("command").equals("copy"))throw new IOException("特效步骤 "+pass.optString("command")+" 尚不支持");
@@ -82,7 +100,7 @@ final class SceneEffects {
                     step=new Effect(kind(instance),null,null,new JSONObject(),new ArrayList<>(Collections.singletonList(null)),new LinkedHashMap<>());step.copy=true;bind.put(0,source);
                 }else{
                     JSONObject override=overrides!=null&&i<overrides.length()&&overrides.optJSONObject(i)!=null?overrides.getJSONObject(i):new JSONObject();
-                    step=pass(archive,instance,pass.getString("material"),override,includes,declared.keySet(),bind);
+                    step=pass(archive,instance,pass.getString("material"),override,includes,declared.keySet(),bind,i);
                 }
                 step.group=group;step.target=target.isEmpty()?null:target;step.bind.putAll(bind);if(i==0)step.fbos=fbos;result.add(step);
             }
@@ -91,7 +109,7 @@ final class SceneEffects {
         }catch(Exception|OutOfMemoryError failure){for(Effect e:result)e.recycle();throw failure;}
     }
 
-    private static Effect pass(ContentArchive archive,JSONObject instance,String materialFile,JSONObject override,JSONObject includes,Set<String> buffers,Map<Integer,String> bind)throws Exception {
+    private static Effect pass(ContentArchive archive,JSONObject instance,String materialFile,JSONObject override,JSONObject includes,Set<String> buffers,Map<Integer,String> bind,int passIndex)throws Exception {
         JSONObject material=WallpaperContent.json(archive,ContentArchive.path(materialFile)).getJSONArray("passes").getJSONObject(0);
         String blending=material.optString("blending","normal");if(!blending.equals("normal")&&!blending.isEmpty())throw new IOException("特效混合方式尚不支持");
         String shader=material.getString("shader");
@@ -115,17 +133,17 @@ final class SceneEffects {
         }
         copy(override.optJSONObject("combos"),combos);
 
-        List<Object> textures=new ArrayList<>();textures.add(null);int last=0;for(int i=1;i<MAX_SLOTS;i++)if(names[i]!=null||bind.containsKey(i))last=i;
+        List<Object> textures=new ArrayList<>();Set<Integer> clamped=new TreeSet<>();textures.add(null);int last=0;for(int i=1;i<MAX_SLOTS;i++)if(names[i]!=null||bind.containsKey(i))last=i;
         try{
             for(int i=1;i<=last;i++){
                 if(bind.containsKey(i)){textures.add("util/black");continue;}
                 Object name=names[i];
                 if(name==null){textures.add("util/black");continue;}
                 String value=String.valueOf(name);
-                if(value.startsWith("_rt_")){if(!buffers.contains(value)&&!value.equals(FULL_FRAME))throw new IOException("特效依赖整幅画面 "+value);bind.put(i,value);textures.add("util/black");continue;}
+                if(value.startsWith("_rt_")){if(!buffers.contains(value)&&!value.equals(FULL_FRAME)&&compositeId(value)<0)throw new IOException("特效依赖整幅画面 "+value);bind.put(i,value);textures.add("util/black");continue;}
                 // The real engine texture when Wallpaper Engine's assets are available, otherwise a synthesized stand-in.
                 String asset=null;try{asset=WallpaperContent.asset(archive,value);}catch(IOException missing){asset=null;}
-                if(asset!=null){textures.add(scaled(WallpaperContent.bitmap(archive.read(asset,32*1024*1024))));continue;}
+                if(asset!=null){byte[] raw=archive.read(asset,32*1024*1024);if(dev.workshopvideo.core.TexturePixels.clampUVs(raw))clamped.add(i);textures.add(scaled(WallpaperContent.bitmap(raw)));continue;}
                 if(ENGINE_TEXTURES.contains(value)){textures.add(value);continue;}
                 throw new IOException("特效依赖引擎贴图 "+value);
             }
@@ -133,13 +151,16 @@ final class SceneEffects {
 
         // Material values bind to uniforms through the shader annotations' "material" names.
         JSONObject constants=new JSONObject();copy(material.optJSONObject("constantshadervalues"),constants);copy(override.optJSONObject("constantshadervalues"),constants);
-        Map<String,float[]> uniforms=new LinkedHashMap<>();Map<String,String> boundUniforms=new HashMap<>();
+        Map<String,float[]> uniforms=new LinkedHashMap<>();Map<String,String> boundUniforms=new HashMap<>(),scriptedUniforms=new HashMap<>();
         for(Map.Entry<String,JSONObject> entry:uniformMeta.entrySet()){
             JSONObject meta=entry.getValue();Object value=lookup(constants,meta.optString("material"));if(value==null)value=meta.opt("default");
             if(value instanceof JSONObject b&&b.opt("user") instanceof String property&&!property.isEmpty())boundUniforms.put(entry.getKey(),property);
+            if(value instanceof JSONObject s&&s.opt("script") instanceof String)scriptedUniforms.put("fx."+instance.optInt("id",-1)+"."+passIndex+"."+meta.optString("material"),entry.getKey());
             float[] parsed=numbers(value,width(types.get(entry.getKey())));if(parsed!=null)uniforms.put(entry.getKey(),parsed);
         }
-        Effect result=new Effect(kind(instance),null,null,combos,textures,uniforms);result.bound.putAll(boundUniforms);result.sourceVertex=vertex;result.sourceFragment=fragment;result.includes=includes;return result;
+        Effect result=new Effect(kind(instance),null,null,combos,textures,uniforms);result.clamped.addAll(clamped);result.bound.putAll(boundUniforms);result.scripted.putAll(scriptedUniforms);
+        JSONArray userTextures=override.optJSONArray("usertextures");
+        if(userTextures!=null)for(int i=1;i<userTextures.length()&&i<textures.size();i++)if(userTextures.opt(i) instanceof String property&&!property.isEmpty())result.userTextures.put(i,property);result.sourceVertex=vertex;result.sourceFragment=fragment;result.includes=includes;return result;
     }
 
     /** Translate in place; false (with a reason) when the translator rejects the shader. */
@@ -158,9 +179,11 @@ final class SceneEffects {
         JSONArray textures=new JSONArray();for(int i=0;i<effect.textures.size();i++){Object t=effect.textures.get(i);textures.put(t==null?JSONObject.NULL:t instanceof String?t:textureFiles.get(i));}
         JSONObject uniforms=new JSONObject();for(Map.Entry<String,float[]> u:effect.uniforms.entrySet()){JSONArray values=new JSONArray();for(float v:u.getValue())values.put((double)v);uniforms.put(u.getKey(),values);}
         JSONObject out=new JSONObject().put("name",effect.name).put("textures",textures).put("uniforms",uniforms).put("group",effect.group);
-        if(effect.copy)out.put("copy",true);else out.put("vertex",effect.vertex).put("fragment",effect.fragment);
-        if(effect.target!=null)out.put("target",effect.target);if(effect.fbos!=null&&effect.fbos.length()>0)out.put("fbos",effect.fbos);
+        if(effect.copy)out.put("copy",true);else out.put("vertex",effect.vertex).put("fragment",effect.fragment);if(effect.finger)out.put("finger",true);
+        if(!effect.clamped.isEmpty())out.put("clamp",new JSONArray(effect.clamped));if(effect.target!=null)out.put("target",effect.target);if(effect.fbos!=null&&effect.fbos.length()>0)out.put("fbos",effect.fbos);
         if(!effect.bound.isEmpty())out.put("bound",new JSONObject(effect.bound));if(effect.when!=null)out.put("when",effect.when);
+        if(!effect.scripted.isEmpty())out.put("scripted",new JSONObject(effect.scripted));if(effect.scriptedVisible!=null)out.put("scriptedVisible",effect.scriptedVisible).put("scriptOff",effect.scriptOff);
+        if(!effect.userTextures.isEmpty()){JSONObject user=new JSONObject();for(Map.Entry<Integer,String> t:effect.userTextures.entrySet())user.put(Integer.toString(t.getKey()),t.getValue());out.put("userTextures",user);}
         if(!effect.bind.isEmpty()){JSONObject bind=new JSONObject();for(Map.Entry<Integer,String> b:effect.bind.entrySet())bind.put(Integer.toString(b.getKey()),b.getValue());out.put("bind",bind);}
         return out;
     }
@@ -185,6 +208,13 @@ final class SceneEffects {
         effect.when=value.optJSONArray("when");
         JSONObject boundUniforms=value.optJSONObject("bound");
         if(boundUniforms!=null)for(Iterator<String> keys=boundUniforms.keys();keys.hasNext();){String key=keys.next();if(uniforms.containsKey(key))effect.bound.put(key,boundUniforms.optString(key));}
+        JSONObject scriptedUniforms=value.optJSONObject("scripted");
+        if(scriptedUniforms!=null)for(Iterator<String> keys=scriptedUniforms.keys();keys.hasNext();){String key=keys.next();String uniform=scriptedUniforms.optString(key);if(key.startsWith("fx.")&&uniforms.containsKey(uniform))effect.scripted.put(key,uniform);}
+        if(value.optString("scriptedVisible","").startsWith("fx.")){effect.scriptedVisible=value.optString("scriptedVisible");effect.scriptOff=value.optBoolean("scriptOff");}
+        JSONObject user=value.optJSONObject("userTextures");
+        if(user!=null)for(Iterator<String> keys=user.keys();keys.hasNext();){String key=keys.next();try{int slot=Integer.parseInt(key);if(slot>0&&slot<textures.size())effect.userTextures.put(slot,user.getString(key));}catch(NumberFormatException ignored){}}
+        effect.finger=value.optBoolean("finger");
+        JSONArray clamp=value.optJSONArray("clamp");if(clamp!=null)for(int k=0;k<clamp.length();k++){int slot=clamp.optInt(k,-1);if(slot>0&&slot<textures.size())effect.clamped.add(slot);}
         JSONObject bind=value.optJSONObject("bind");
         if(bind!=null)for(Iterator<String> keys=bind.keys();keys.hasNext();){String key=keys.next();int slot;try{slot=Integer.parseInt(key);}catch(NumberFormatException e){continue;}String name=bind.getString(key);if(slot>=0&&slot<MAX_SLOTS&&(name.equals("previous")||name.startsWith("_rt_")))effect.bind.put(slot,name);}
         return effect;

@@ -35,7 +35,7 @@ final class SceneEffectRunner implements AutoCloseable {
     private int copy,copyPoint,copyRegion,copyImage,plain,plainPoint,plainRegion,plainImage;
 
     /** True when at least one of the layer's effects can still run. */
-    static boolean active(WallpaperContent.Layer layer){for(SceneEffects.Effect e:layer.effects)if(!e.failed&&!e.off)return true;return false;}
+    static boolean active(WallpaperContent.Layer layer){for(SceneEffects.Effect e:layer.effects)if(!e.failed&&!e.disabled())return true;return false;}
 
     /** Processes the layer and returns the texture holding the result, or 0 when nothing ran. Leaves FBO 0 bound. */
     int apply(WallpaperContent.Layer layer,int source,int sourceWidth,int sourceHeight,TexturePixels.Frame region,double seconds,float pointerX,float pointerY){
@@ -49,7 +49,7 @@ final class SceneEffectRunner implements AutoCloseable {
             // Each effect is a group of passes; only the last writes the layer, earlier ones fill the effect's own buffers.
             for(int i=0;i<all.size();){
                 int group=all.get(i).group,j=i;while(j<all.size()&&all.get(j).group==group)j++;
-                List<SceneEffects.Effect> steps=all.subList(i,j);i=j;if(steps.get(0).off)continue;
+                List<SceneEffects.Effect> steps=all.subList(i,j);i=j;if(steps.get(0).disabled())continue;
                 boolean ready=true;for(SceneEffects.Effect e:steps)if(e.failed||!e.copy&&program(e)==null){ready=false;break;}
                 if(!ready){for(SceneEffects.Effect e:steps)e.failed=true;continue;}
                 int input=chain.textures[current];Map<String,int[]> named=buffers(layer,steps.get(0).fbos,w,h);boolean done=true;
@@ -71,12 +71,27 @@ final class SceneEffectRunner implements AutoCloseable {
     static final String FULL_FRAME=SceneEffects.FULL_FRAME;
     /** Texture holding the picture drawn so far while a layer that reads it is processed, else 0. */
     int frame,frameWidth,frameHeight;
+    /** g_EffectModelViewProjectionMatrix of the layer being processed (SceneGeometry.effectMatrix); null for a quad covering the whole target. */
+    float[] effectMatrix;
+    /** Placement of the layer being processed, for pointer unprojection (g_ModelViewProjectionMatrixInverse); null with effectMatrix. */
+    private dev.workshopvideo.core.SceneGeometry.Pose layerPose;
+    /** Places the layer being processed on screen (null: a quad covering the whole target). */
+    void place(dev.workshopvideo.core.SceneGeometry.Pose pose){layerPose=pose;effectMatrix=pose==null?null:dev.workshopvideo.core.SceneGeometry.effectMatrix(pose);}
+    /** The finger (screen 0..1, y down) and whether it touches, for effects that follow the finger only. */
+    private float touchX,touchY;private boolean touching;
+    void touch(float x,float y,boolean down){touchX=x;touchY=y;touching=down;}
+    /** Other layers' results by buffer name (_rt_imageLayerComposite_<id>_a) as {width, height, texture}, filled by SceneGpu before apply. */
+    final Map<String,int[]> composites=new HashMap<>();
+    /** Whether any effect of the layer samples another layer's result. */
+    static boolean readsComposite(WallpaperContent.Layer layer){for(SceneEffects.Effect e:layer.effects)for(String b:e.bind.values())if(SceneEffects.compositeId(b)>=0)return true;return false;}
+    /** Size {width, height} of the buffers holding the layer's last effect result, or null before the first. */
+    int[] resultSize(WallpaperContent.Layer layer){Chain c=chains.get(layer);return c==null?null:new int[]{c.width,c.height};}
     /** Whether any effect of the layer samples the picture drawn so far; such layers are processed while drawing. */
     static boolean readsFrame(WallpaperContent.Layer layer){for(SceneEffects.Effect e:layer.effects)if(e.bind.containsValue(FULL_FRAME))return true;return false;}
     /** Texture for a slot of a pass: {width, height, texture}; bound buffers first, slot 0 defaults to the effect's input. */
     private int[] source(SceneEffects.Effect effect,int slot,int input,int w,int h,Map<String,int[]> named){
         String bound=effect.bind.get(slot);
-        if(bound!=null){if(bound.equals("previous"))return new int[]{w,h,input};if(bound.equals(FULL_FRAME))return frame==0?engine("util/black"):new int[]{frameWidth,frameHeight,frame};int[] b=named.get(bound);return b==null?null:new int[]{b[2],b[3],b[1]};}
+        if(bound!=null){if(bound.equals("previous"))return new int[]{w,h,input};if(bound.equals(FULL_FRAME))return frame==0?engine("util/black"):new int[]{frameWidth,frameHeight,frame};if(SceneEffects.compositeId(bound)>=0){int[] c=composites.get(bound);return c==null?engine("util/black"):c;}int[] b=named.get(bound);return b==null?null:new int[]{b[2],b[3],b[1]};}
         if(slot==0)return new int[]{w,h,input};
         Object value=slot>0&&slot<effect.textures.size()?effect.textures.get(slot):null;return value instanceof Bitmap b?upload(b):engine(value instanceof String s?s:"util/black");
     }
@@ -87,11 +102,14 @@ final class SceneEffectRunner implements AutoCloseable {
             if(u.type==GLES20.GL_SAMPLER_2D){
                 int slot=slot(name);int[] size=source(effect,slot,input,w,h,named);if(size==null)size=engine("util/black");int texture=size[2];
                 GLES20.glActiveTexture(GLES20.GL_TEXTURE0+unitIndex);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,texture);GLES20.glUniform1i(u.location,unitIndex);unitIndex++;
+                // A package image clamps or repeats as its TEX flags say; shared uploads take the mode of the slot binding them.
+                if(slot>0&&!effect.bind.containsKey(slot)&&slot<effect.textures.size()&&effect.textures.get(slot) instanceof Bitmap){int wrap=effect.clamped.contains(slot)?GLES20.GL_CLAMP_TO_EDGE:GLES20.GL_REPEAT;GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_WRAP_S,wrap);GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_WRAP_T,wrap);}
                 Uniform resolution=program.uniforms.get("g_Texture"+slot+"Resolution");if(resolution!=null)GLES20.glUniform4f(resolution.location,size[0],size[1],size[0],size[1]);
                 continue;
             }
             float[] value=effect.uniforms.get(name);
-            if(value==null)value=engineValue(name,seconds,pointerX,pointerY,outW,outH);
+            if(value==null)value=uniform(effect,name,w,h);
+            if(value==null)value=engineValue(name,seconds,effect.finger?(touching?touchX:-10):pointerX,effect.finger?(touching?touchY:-10):pointerY,outW,outH);
             if(value!=null)set(u,value);
         }
         GLES20.glVertexAttribPointer(program.position,3,GLES20.GL_FLOAT,false,12,positions);GLES20.glEnableVertexAttribArray(program.position);
@@ -103,6 +121,13 @@ final class SceneEffectRunner implements AutoCloseable {
         return true;
     }
 
+    /** Engine matrices that depend on where the layer is: the effect quad on screen and the pointer's unprojection into the layer. */
+    private float[] uniform(SceneEffects.Effect effect,String name,int w,int h){
+        if(layerPose==null)return null;
+        if(name.equals("g_EffectModelViewProjectionMatrix"))return effectMatrix;
+        if(name.equals("g_ModelViewProjectionMatrixInverse"))return dev.workshopvideo.core.SceneGeometry.pointerInverse(layerPose,w,h);
+        return null;
+    }
     private static float[] engineValue(String name,double seconds,float pointerX,float pointerY,int w,int h){
         return switch(name){
             case "g_Time"->new float[]{(float)(seconds%3600)};
@@ -209,15 +234,17 @@ final class SceneEffectRunner implements AutoCloseable {
     /** Engine textures that packages reference by name but never contain. */
     private int[] engine(String name){
         int[] existing=engine.get(name);if(existing!=null)return existing;
-        int size=name.equals("util/noise")||name.equals("util/clouds_256")?256:1;ByteBuffer pixels=ByteBuffer.allocateDirect(size*size*4).order(ByteOrder.nativeOrder());
+        int size=name.equals("util/noise")||name.equals("util/clouds_256")?256:name.equals("particle/halo_6")?128:1;ByteBuffer pixels=ByteBuffer.allocateDirect(size*size*4).order(ByteOrder.nativeOrder());
         Random random=new Random(431960);
         for(int i=0;i<size*size;i++)switch(name){
             case "util/white"->pixels.put((byte)255).put((byte)255).put((byte)255).put((byte)255);
             case "util/noflow"->pixels.put((byte)128).put((byte)128).put((byte)0).put((byte)255);
             case "util/noise","util/clouds_256"->pixels.put((byte)random.nextInt(256)).put((byte)random.nextInt(256)).put((byte)random.nextInt(256)).put((byte)random.nextInt(256));
+            // X-ray's default pointer sprite: a white disc, opaque to about half its radius, fading out by the edge (as the original).
+            case "particle/halo_6"->{double dx=(i%size+.5)/size*2-1,dy=(i/size+.5)/size*2-1,t=Math.max(0,Math.min(1,(Math.hypot(dx,dy)-.55)/.43));pixels.put((byte)255).put((byte)255).put((byte)255).put((byte)Math.round(255*(1-t*t*(3-2*t))));}
             default->pixels.put((byte)0).put((byte)0).put((byte)0).put((byte)0);
         }
-        pixels.position(0);int[] id=new int[1];GLES20.glGenTextures(1,id,0);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,id[0]);parameters(GLES20.GL_REPEAT);
+        pixels.position(0);int[] id=new int[1];GLES20.glGenTextures(1,id,0);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,id[0]);parameters(name.equals("particle/halo_6")?GLES20.GL_CLAMP_TO_EDGE:GLES20.GL_REPEAT);
         GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D,0,GLES20.GL_RGBA,size,size,0,GLES20.GL_RGBA,GLES20.GL_UNSIGNED_BYTE,pixels);
         int[] result={size,size,id[0]};engine.put(name,result);return result;
     }

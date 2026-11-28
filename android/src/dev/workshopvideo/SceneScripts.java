@@ -42,7 +42,8 @@ final class SceneScripts implements AutoCloseable {
             if(objects!=null)for(int i=0;i<objects.length();i++){
                 JSONObject all=objects.getJSONObject(i).optJSONObject("scripts");if(all==null)continue;
                 for(Iterator<String> p=all.keys();p.hasNext();){JSONObject values=all.getJSONObject(p.next()).optJSONObject("properties");if(values==null)continue;
-                    for(Iterator<String> n=values.keys();n.hasNext();){String name=n.next();JSONObject v=values.optJSONObject(name);if(v!=null&&v.opt("user") instanceof String user&&options.has("user."+user))v.put("value",dev.workshopvideo.core.UserValues.forScripts(options.opt("user."+user)));}}
+                    for(Iterator<String> n=values.keys();n.hasNext();){String name=n.next();JSONObject v=values.optJSONObject(name);if(v!=null&&v.opt("user") instanceof String user&&options.has("user."+user))v.put("value",dev.workshopvideo.core.UserValues.forScripts(options.opt("user."+user)));
+                        else if(v!=null&&v.opt("user") instanceof JSONObject cond&&options.has("user."+cond.optString("name")))v.put("value",String.valueOf(options.opt("user."+cond.optString("name"))).equals(String.valueOf(cond.opt("condition"))));}}
             }
             return root.toString();
         }catch(Exception invalid){return scripts;}
@@ -106,7 +107,7 @@ final class SceneScripts implements AutoCloseable {
         }
         long now=System.nanoTime();if(now-lastSubmit<15_000_000L)return;lastSubmit=now;
         try{
-            JSONObject input=new JSONObject().put("runtime",runtime).put("frametime",lastRuntime<0?0:Math.max(0,runtime-lastRuntime)).put("down",down);
+            JSONObject input=new JSONObject().put("timeOfDay",java.time.LocalTime.now().toNanoOfDay()/8.64e13).put("runtime",runtime).put("frametime",lastRuntime<0?0:Math.max(0,runtime-lastRuntime)).put("down",down);
             if(pendingUser!=null){input.put("user",pendingUser);pendingUser=null;}
             if(cursor!=null)input.put("cursor",new JSONArray().put(cursor[0]).put(cursor[1]));
             JSONArray list=new JSONArray();for(JSONObject e:events)list.put(e);events.clear();input.put("events",list);
@@ -132,6 +133,9 @@ final class SceneScripts implements AutoCloseable {
             int id;try{id=Integer.parseInt(key);}catch(NumberFormatException e){continue;}
             scene.applyScript(id,s);if(s.length>11){if(s[11]<.5f)stopped.add(id);else stopped.remove(id);}
         }
+        JSONObject fx=out.optJSONObject("fx");
+        if(fx!=null)for(Iterator<String> ids=fx.keys();ids.hasNext();){String id=ids.next();JSONObject values=fx.optJSONObject(id);if(values==null)continue;int objectId;try{objectId=Integer.parseInt(id);}catch(NumberFormatException e){continue;}
+            for(Iterator<String> keys=values.keys();keys.hasNext();){String key=keys.next();JSONArray v=values.optJSONArray(key);if(v==null||v.length()<1||v.length()>4)continue;float[] f=new float[v.length()];for(int i=0;i<f.length;i++)f[i]=(float)v.optDouble(i,0);scene.applyEffectValue(objectId,key,f);}}
         JSONArray bloom=out.optJSONArray("bloom");if(bloom!=null&&bloom.length()>=6)scene.applyBloom(bloom.optDouble(0,0)>.5,(float)bloom.optDouble(1,Double.NaN),(float)bloom.optDouble(2,Double.NaN),new float[]{(float)bloom.optDouble(3,1),(float)bloom.optDouble(4,1),(float)bloom.optDouble(5,1)});
         JSONArray camera=out.optJSONArray("camera");if(camera!=null&&camera.length()>=3)scene.applyCamera((float)camera.optDouble(0,0),(float)camera.optDouble(1,0),(float)camera.optDouble(2,1));
         JSONObject texts=out.optJSONObject("texts");
